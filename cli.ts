@@ -333,6 +333,38 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
     .status { font-weight: 800; }
     .ok { color: #137333; }
     .warn { color: #b06000; }
+    .alert-card {
+      background: #fff5f5;
+      border: 1px solid #feb2b2;
+      border-radius: 8px;
+      padding: 24px;
+      margin-bottom: 24px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .alert-title {
+      color: #9b2c2c;
+      font-weight: 700;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .error-log {
+      font-family: Consolas, "SFMono-Regular", monospace;
+      background: #2d3748;
+      color: #fff;
+      padding: 12px;
+      border-radius: 6px;
+      overflow-x: auto;
+      margin: 8px 0;
+      white-space: pre-wrap;
+    }
+    .fix-suggestion {
+      color: #c53030;
+      font-size: 0.9rem;
+      font-weight: 600;
+      margin-top: 4px;
+    }
   </style>
 </head>
 <body>
@@ -345,6 +377,8 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
     <button type="button" id="expand-all">Expand all</button>
     <button type="button" id="collapse-all">Collapse all</button>
   </div>
+
+  <div id="diagnostic-panel"></div>
 
   <section>
     <h2>Primary Semantic Entity Tree</h2>
@@ -485,6 +519,72 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
       });
     }
 
+    function renderDiagnostics(errors, container) {
+      container.textContent = '';
+
+      if (!errors || errors.length === 0) {
+        const successBox = document.createElement('section');
+        successBox.style.borderColor = '#c6f6d5';
+        successBox.style.background = '#f0fff4';
+        const title = document.createElement('h2');
+        title.style.color = '#22543d';
+        title.style.margin = '0';
+        title.textContent = 'Schema Syntax Status: Passed (No Syntax Errors)';
+        successBox.appendChild(title);
+        container.appendChild(successBox);
+        return;
+      }
+
+      const alertCard = document.createElement('div');
+      alertCard.className = 'alert-card';
+
+      const title = document.createElement('h2');
+      title.className = 'alert-title';
+      title.textContent = 'Critical Syntax Errors Detected (' + errors.length + ')';
+      alertCard.appendChild(title);
+
+      const description = document.createElement('p');
+      description.className = 'meta';
+      description.style.color = '#742a2a';
+      description.textContent = 'Strict parsers and Googlebot may drop these specific structured-data blocks completely during crawls.';
+      alertCard.appendChild(description);
+
+      errors.forEach(error => {
+        const item = document.createElement('div');
+        item.style.marginTop = '16px';
+        item.style.borderTop = '1px solid #fed7d7';
+        item.style.paddingTop = '12px';
+
+        const typeRow = document.createElement('p');
+        typeRow.style.margin = '0 0 6px';
+        appendText(typeRow, 'node-key', 'Type: ');
+        appendText(typeRow, 'node-type', error.type || 'UNKNOWN');
+        item.appendChild(typeRow);
+
+        const messageRow = document.createElement('p');
+        messageRow.style.margin = '0 0 8px';
+        appendText(messageRow, 'node-key', 'Message: ');
+        const message = document.createElement('span');
+        message.textContent = error.message || 'No parser message provided.';
+        messageRow.appendChild(message);
+        item.appendChild(messageRow);
+
+        const snippet = document.createElement('div');
+        snippet.className = 'error-log';
+        snippet.textContent = error.snippet || '';
+        item.appendChild(snippet);
+
+        const fix = document.createElement('div');
+        fix.className = 'fix-suggestion';
+        fix.textContent = 'Recommendation: ' + (error.suggestedFix || 'Review the structured-data block syntax.');
+        item.appendChild(fix);
+
+        alertCard.appendChild(item);
+      });
+
+      container.appendChild(alertCard);
+    }
+
     function setCollapsed(collapsed) {
       document.querySelectorAll('.node-toggle').forEach(toggle => {
         toggle.classList.toggle('collapsed', collapsed);
@@ -494,6 +594,7 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
       });
     }
 
+    renderDiagnostics(reportData.detectedSyntaxErrors, document.getElementById('diagnostic-panel'));
     renderEntityTree(reportData.primaryRoot, document.getElementById('primary-tree-root'));
     renderOrphans(reportData.orphanRoots, document.getElementById('orphan-tree-root'));
     document.getElementById('expand-all').addEventListener('click', () => setCollapsed(false));
