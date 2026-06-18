@@ -125,6 +125,7 @@ describe('audit action orchestration', () => {
         {
           '@type': 'Product',
           '@id': '#product',
+          url: 'https://example.com/product',
           brand: {
             '@type': 'Brand',
             '@id': '#brand',
@@ -143,8 +144,37 @@ describe('audit action orchestration', () => {
     );
 
     expect(report).toEqual({
-      registryIdCount: 2,
+      registryIdCount: 3,
       connectedTreeElementCount: 2,
+      brokenLinks: [],
+      status: 'success',
+    });
+  });
+
+  it('treats URL identity references as connected graph targets', () => {
+    const report = verifyGraphResolutionHealth(
+      [
+        {
+          '@type': 'RealEstateListing',
+          url: 'https://example.com/listing',
+          offers: {
+            '@type': 'Offer',
+            url: 'https://example.com/listing',
+          },
+        },
+      ],
+      {
+        '@type': 'RealEstateListing',
+        url: 'https://example.com/listing',
+        offers: {
+          $ref: 'https://example.com/listing',
+        },
+      },
+      { log: false }
+    );
+
+    expect(report).toMatchObject({
+      registryIdCount: 1,
       brokenLinks: [],
       status: 'success',
     });

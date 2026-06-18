@@ -12,6 +12,7 @@ import {
 } from './src';
 import {
   buildGraphEntityMap,
+  consolidateGraphEntities,
   resolveGraph,
   selectBestRootIndex,
   selectUnlinkedRootEntities,
@@ -35,6 +36,7 @@ interface ResolvedAuditReport {
   finalUrl?: string;
   generatedAt: string;
   entitiesForGraphResolver: GraphEntity[];
+  resolvedEntities: GraphEntity[];
   detectedSyntaxErrors: AuditActionResult['detectedSyntaxErrors'];
   primaryRoot: GraphEntity | null;
   orphanRoots: GraphEntity[];
@@ -173,7 +175,9 @@ function parseArgs(args: string[]): CliOptions {
 
 function buildResolvedAuditReport(extractedData: ScrapeResult): ResolvedAuditReport {
   const graphOutput = processRawPayload(extractedData);
-  const entities = graphOutput.entitiesForGraphResolver as GraphEntity[];
+  const entities = consolidateGraphEntities(
+    graphOutput.entitiesForGraphResolver as GraphEntity[]
+  );
   const entityMap = buildGraphEntityMap(entities);
   const resolvedTreeArray = resolveGraph(entities, entityMap);
   const bestRootIndex = selectBestRootIndex(resolvedTreeArray);
@@ -192,6 +196,7 @@ function buildResolvedAuditReport(extractedData: ScrapeResult): ResolvedAuditRep
     finalUrl: extractedData.finalUrl,
     generatedAt: new Date().toISOString(),
     entitiesForGraphResolver: entities,
+    resolvedEntities: resolvedTreeArray,
     detectedSyntaxErrors: graphOutput.detectedSyntaxErrors,
     primaryRoot,
     orphanRoots,
@@ -391,6 +396,12 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
   </section>
 
   <section>
+    <h2>Complete Resolved Graph Forest</h2>
+    <p class="meta">Every top-level entity found on the page, with known in-page references expanded.</p>
+    <div id="resolved-forest-root"></div>
+  </section>
+
+  <section>
     <h2>Syntax Errors</h2>
     <pre>${escapeHtml(JSON.stringify(report.detectedSyntaxErrors, null, 2))}</pre>
   </section>
@@ -519,6 +530,28 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
       });
     }
 
+    function renderResolvedForest(values, container) {
+      container.textContent = '';
+      if (!values || values.length === 0) {
+        const p = document.createElement('p');
+        p.className = 'meta';
+        p.textContent = 'No resolved entities present.';
+        container.appendChild(p);
+        return;
+      }
+
+      values.forEach((entity, index) => {
+        const h3 = document.createElement('h3');
+        h3.style.margin = '20px 0 8px 0';
+        h3.style.color = 'var(--accent)';
+        h3.textContent = 'Resolved Entity #' + (index + 1) + ' (' + (entity['@type'] || 'Unknown') + ')';
+        container.appendChild(h3);
+        const wrapper = document.createElement('div');
+        container.appendChild(wrapper);
+        renderEntityTree(entity, wrapper);
+      });
+    }
+
     function renderDiagnostics(errors, container) {
       container.textContent = '';
 
@@ -597,6 +630,7 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
     renderDiagnostics(reportData.detectedSyntaxErrors, document.getElementById('diagnostic-panel'));
     renderEntityTree(reportData.primaryRoot, document.getElementById('primary-tree-root'));
     renderOrphans(reportData.orphanRoots, document.getElementById('orphan-tree-root'));
+    renderResolvedForest(reportData.resolvedEntities, document.getElementById('resolved-forest-root'));
     document.getElementById('expand-all').addEventListener('click', () => setCollapsed(false));
     document.getElementById('collapse-all').addEventListener('click', () => setCollapsed(true));
   </script>

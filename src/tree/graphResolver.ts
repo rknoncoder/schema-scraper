@@ -29,12 +29,36 @@ const ROOT_TYPE_PRIORITY = [
   'LocalBusiness',
 ];
 
+export function consolidateGraphEntities(entities: GraphEntity[]): GraphEntity[] {
+  const registry = new Map<string, GraphEntity>();
+  const namelessEntities: GraphEntity[] = [];
+
+  for (const entity of entities) {
+    const id = stringValue(entity['@id']);
+
+    if (!id) {
+      namelessEntities.push(cloneValue(entity));
+      continue;
+    }
+
+    const existing = registry.get(id);
+    registry.set(
+      id,
+      existing
+        ? mergeConsolidatedEntity(existing, entity)
+        : cloneValue(entity)
+    );
+  }
+
+  return [...registry.values(), ...namelessEntities];
+}
+
 export function buildGraphEntityMap(
   entities: GraphEntity[]
 ): ReadonlyMap<string, GraphEntity> {
   const map = new Map<string, GraphEntity>();
 
-  for (const entity of entities) {
+  for (const entity of consolidateGraphEntities(entities)) {
     indexEntity(entity, map);
   }
 
@@ -43,10 +67,13 @@ export function buildGraphEntityMap(
 
 export function resolveGraph(
   entities: GraphEntity[],
-  entityMap = buildGraphEntityMap(entities)
+  entityMap?: ReadonlyMap<string, GraphEntity>
 ): GraphEntity[] {
-  return entities
-    .map(entity => resolveNode(entity, new Set(), entityMap))
+  const consolidatedEntities = consolidateGraphEntities(entities);
+  const map = entityMap ?? buildGraphEntityMap(consolidatedEntities);
+
+  return consolidatedEntities
+    .map(entity => resolveNode(entity, new Set(), map))
     .filter(isGraphEntity);
 }
 
@@ -191,6 +218,35 @@ function entityScore(entity: GraphEntity): number {
   return Object.keys(entity).length + (entity['@type'] ? 5 : 0);
 }
 
+function mergeConsolidatedEntity(primary: GraphEntity, secondary: GraphEntity): GraphEntity {
+  const merged = cloneValue(primary);
+
+  for (const [key, value] of Object.entries(secondary)) {
+    const existing = merged[key];
+
+    if (isEmptyValue(existing)) {
+      merged[key] = cloneValue(value);
+      continue;
+    }
+
+    if (key === '@type') {
+      merged['@type'] = mergeTypeValues(existing, value) as GraphEntity['@type'];
+      continue;
+    }
+
+    if (Array.isArray(existing) && Array.isArray(value)) {
+      merged[key] = mergeArrayValues(existing, value);
+      continue;
+    }
+
+    if (isRecord(existing) && isRecord(value)) {
+      merged[key] = mergeConsolidatedEntity(existing as GraphEntity, value as GraphEntity);
+    }
+  }
+
+  return merged;
+}
+
 function deepMerge(first: unknown, second: unknown): GraphEntity {
   if (!isRecord(first)) return isRecord(second) ? second : {};
   if (!isRecord(second)) return first as GraphEntity;
@@ -212,7 +268,7 @@ function mergeValue(first: unknown, second: unknown, key: string): unknown {
   if (key === '@type') return mergeTypeValues(first, second);
 
   if (Array.isArray(first) && Array.isArray(second)) {
-    return [...first, ...second.filter(item => !containsEquivalent(first, item))];
+    return mergeArrayValues(first, second);
   }
 
   if (isRecord(first) && isRecord(second)) {
@@ -220,6 +276,17 @@ function mergeValue(first: unknown, second: unknown, key: string): unknown {
   }
 
   return second ?? first;
+}
+
+function mergeArrayValues(first: unknown[], second: unknown[]): unknown[] {
+  const merged: unknown[] = [];
+
+  for (const item of [...first, ...second]) {
+    if (item === '' || containsEquivalent(merged, item)) continue;
+    merged.push(cloneValue(item));
+  }
+
+  return merged;
 }
 
 function mergeTypeValues(first: unknown, second: unknown): unknown {
@@ -241,6 +308,13 @@ function typeValues(value: unknown): string[] {
 
 function containsEquivalent(values: unknown[], candidate: unknown): boolean {
   return values.some(value => stableStringify(value) === stableStringify(candidate));
+}
+
+function isEmptyValue(value: unknown): boolean {
+  return value === undefined
+    || value === null
+    || value === ''
+    || (Array.isArray(value) && value.length === 0);
 }
 
 function cloneValue<T>(value: T): T {

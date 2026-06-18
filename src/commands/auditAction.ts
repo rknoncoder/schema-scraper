@@ -183,10 +183,7 @@ function collectIds(node: unknown, ids: Set<string>): void {
     return;
   }
 
-  const id = (node as Record<string, unknown>)['@id'];
-  if (typeof id === 'string' && id.length > 0) {
-    ids.add(id);
-  }
+  collectIdentityValues(node as Record<string, unknown>).forEach(id => ids.add(id));
 
   Object.values(node).forEach(child => collectIds(child, ids));
 }
@@ -247,4 +244,30 @@ function logGraphResolutionHealth(
 
 function identity(value: string): string {
   return value;
+}
+
+function collectIdentityValues(record: Record<string, unknown>): string[] {
+  return [
+    stringValue(record['@id']),
+    stringValue(record.url),
+    ...arrayStringValues(record.sameAs),
+  ].filter((value): value is string => typeof value === 'string');
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim().length > 0
+    ? normalizeIdentity(value)
+    : undefined;
+}
+
+function arrayStringValues(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is string => typeof item === 'string')
+    .map(normalizeIdentity);
+}
+
+function normalizeIdentity(value: string): string {
+  const trimmed = value.trim();
+  return trimmed.length > 1 ? trimmed.replace(/\/$/, '') : trimmed;
 }

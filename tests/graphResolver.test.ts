@@ -1,5 +1,6 @@
 import {
   buildGraphEntityMap,
+  consolidateGraphEntities,
   resolveGraph,
   selectBestRootEntity,
   selectBestRootIndex,
@@ -67,6 +68,84 @@ describe('graph resolver', () => {
         $ref: '#org',
       },
     });
+  });
+
+  it('consolidates entities that share the same explicit @id', () => {
+    const entities = [
+      {
+        '@type': 'Product',
+        '@id': '#product',
+        name: 'Example Product',
+        image: ['hero.jpg', ''],
+        offers: {
+          '@type': 'Offer',
+          price: '100',
+        },
+      },
+      {
+        '@type': 'Product',
+        '@id': '#product',
+        name: 'Replacement Name',
+        sku: 'SKU-123',
+        image: ['hero.jpg', 'gallery.jpg'],
+        offers: {
+          availability: 'https://schema.org/InStock',
+        },
+      },
+      {
+        '@type': 'BreadcrumbList',
+        itemListElement: [],
+      },
+    ];
+
+    expect(consolidateGraphEntities(entities)).toEqual([
+      {
+        '@type': 'Product',
+        '@id': '#product',
+        name: 'Example Product',
+        image: ['hero.jpg', 'gallery.jpg'],
+        offers: {
+          '@type': 'Offer',
+          price: '100',
+          availability: 'https://schema.org/InStock',
+        },
+        sku: 'SKU-123',
+      },
+      {
+        '@type': 'BreadcrumbList',
+        itemListElement: [],
+      },
+    ]);
+  });
+
+  it('resolves a duplicate @id graph as one merged root', () => {
+    const resolved = resolveGraph([
+      {
+        '@type': 'Product',
+        '@id': '#product',
+        offers: {
+          price: '100',
+        },
+      },
+      {
+        '@type': 'Product',
+        '@id': '#product',
+        offers: {
+          priceCurrency: 'INR',
+        },
+      },
+    ]);
+
+    expect(resolved).toEqual([
+      {
+        '@type': 'Product',
+        '@id': '#product',
+        offers: {
+          price: '100',
+          priceCurrency: 'INR',
+        },
+      },
+    ]);
   });
 
   it('keeps only roots not already linked inside the selected master tree', () => {

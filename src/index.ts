@@ -10,6 +10,7 @@ export {
 export { TextReporter } from './reporter/textReporter';
 export {
   buildGraphEntityMap,
+  consolidateGraphEntities,
   resolveGraph,
   resolveNode,
   selectBestRootEntity,
