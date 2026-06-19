@@ -15,6 +15,7 @@ interface PageLike {
   content(): Promise<string>;
   goto(url: string, options: Record<string, unknown>): Promise<unknown>;
   setUserAgent(userAgent: string): Promise<void>;
+  waitForNetworkIdle?(options: Record<string, unknown>): Promise<unknown>;
   url(): string;
 }
 
@@ -34,10 +35,7 @@ export async function fetchRenderedHtml(url: string): Promise<FetchResult> {
   try {
     const page = await browser.newPage();
     await page.setUserAgent(BROWSER_USER_AGENT);
-    await page.goto(url, {
-      waitUntil: 'networkidle2',
-      timeout: RENDER_TIMEOUT_MS,
-    });
+    await gotoRenderedPage(page, url);
 
     return {
       html: await page.content(),
@@ -49,6 +47,31 @@ export async function fetchRenderedHtml(url: string): Promise<FetchResult> {
     });
   } finally {
     await browser.close();
+  }
+}
+
+async function gotoRenderedPage(page: PageLike, url: string): Promise<void> {
+  try {
+    await page.goto(url, {
+      waitUntil: 'networkidle0',
+      timeout: RENDER_TIMEOUT_MS,
+    });
+    return;
+  } catch (error) {
+    if (!isNavigationTimeout(error)) throw error;
+  }
+
+  await page.goto(url, {
+    waitUntil: 'domcontentloaded',
+    timeout: RENDER_TIMEOUT_MS,
+  });
+
+  if (page.waitForNetworkIdle) {
+    await page.waitForNetworkIdle({
+      idleTime: 1000,
+      timeout: Math.min(5000, RENDER_TIMEOUT_MS),
+      concurrency: 2,
+    }).catch(() => undefined);
   }
 }
 
@@ -68,4 +91,8 @@ async function loadPuppeteer(): Promise<PuppeteerModule> {
 
 function renderErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function isNavigationTimeout(error: unknown): boolean {
+  return error instanceof Error && /timeout/i.test(error.message);
 }

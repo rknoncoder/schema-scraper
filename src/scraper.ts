@@ -31,6 +31,7 @@ export interface ScrapeResult {
   url: string;
   finalUrl: string;
   schemas: RawSchemaBlock[];
+  warnings?: string[];
 }
 
 export async function scrapeSchema(
@@ -91,17 +92,29 @@ export function scrapeJsonLdInput(
 export async function scrapeSchemaDualPass(url: string): Promise<ScrapeResult> {
   const staticFetched = await fetchHtml(url);
   const staticSchemas = extractSchemasFromHtml(staticFetched.html, 'static');
-  const renderedFetched = await fetchRenderedHtml(url);
-  const renderedSchemas = filterRenderedDuplicates(
-    staticSchemas,
-    extractSchemasFromHtml(renderedFetched.html, 'rendered')
-  );
 
-  return {
-    url,
-    finalUrl: renderedFetched.finalUrl || staticFetched.finalUrl,
-    schemas: [...staticSchemas, ...renderedSchemas],
-  };
+  try {
+    const renderedFetched = await fetchRenderedHtml(url);
+    const renderedSchemas = filterRenderedDuplicates(
+      staticSchemas,
+      extractSchemasFromHtml(renderedFetched.html, 'rendered')
+    );
+
+    return {
+      url,
+      finalUrl: renderedFetched.finalUrl || staticFetched.finalUrl,
+      schemas: [...staticSchemas, ...renderedSchemas],
+    };
+  } catch (error) {
+    return {
+      url,
+      finalUrl: staticFetched.finalUrl,
+      schemas: staticSchemas,
+      warnings: [
+        `Rendered pass failed; report contains static schemas only. ${errorMessage(error)}`,
+      ],
+    };
+  }
 }
 
 export function extractSchemasFromHtml(
@@ -166,4 +179,8 @@ function stripJsonLdScriptWrapper(value: string): string {
   );
 
   return (match ? match[1] : value).trim();
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

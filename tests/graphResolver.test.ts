@@ -54,6 +54,19 @@ describe('graph resolver', () => {
     expect(selectBestRootIndex(entities)).toBe(1);
   });
 
+  it('prioritizes ProductGroup over site-level organization roots', () => {
+    const entities = [
+      { '@type': 'Organization', url: '/' },
+      { '@type': 'ProductGroup', name: 'Variant Product Group' },
+    ];
+
+    expect(selectBestRootEntity(entities)).toEqual({
+      '@type': 'ProductGroup',
+      name: 'Variant Product Group',
+    });
+    expect(selectBestRootIndex(entities)).toBe(1);
+  });
+
   it('emits reference markers for circular identity chains', () => {
     const entities = [
       {
@@ -218,6 +231,31 @@ describe('graph resolver', () => {
         contentUrl: 'https://cdn.example.com/video.mp4',
       },
     ]);
+  });
+
+  it('caps merged arrays to keep huge variant collections bounded', () => {
+    const firstVariants = Array.from({ length: 100 }, (_, index) => ({
+      '@id': `#variant-${index}`,
+    }));
+    const secondVariants = Array.from({ length: 100 }, (_, index) => ({
+      '@id': `#variant-${index + 100}`,
+    }));
+
+    const [merged] = consolidateGraphEntities([
+      {
+        '@type': 'ProductGroup',
+        '@id': '#group',
+        hasVariant: firstVariants,
+      },
+      {
+        '@type': 'ProductGroup',
+        '@id': '#group',
+        hasVariant: secondVariants,
+      },
+    ]);
+
+    expect(Array.isArray(merged.hasVariant)).toBe(true);
+    expect((merged.hasVariant as unknown[])).toHaveLength(150);
   });
 
   it('keeps only roots not already linked inside the selected master tree', () => {

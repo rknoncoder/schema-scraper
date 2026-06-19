@@ -84,6 +84,59 @@ describe('audit action orchestration', () => {
     ]);
   });
 
+  it('canonicalizes schema URL fields before graph resolution', () => {
+    const result = processRawPayload({
+      url: 'https://example.com/products/widget',
+      finalUrl: 'https://example.com/products/widget?variant=1',
+      schemas: extractSchemasFromHtml(`
+        <script type="application/ld+json">
+          {
+            "@context": "https://schema.org",
+            "@type": "Product",
+            "@id": "#product",
+            "url": "/products/widget",
+            "image": ["/cdn/widget.jpg"],
+            "offers": {
+              "@type": "Offer",
+              "url": "./buy"
+            }
+          }
+        </script>
+      `),
+    });
+
+    expect(result.entitiesForGraphResolver[0]).toMatchObject({
+      '@id': 'https://example.com/products/widget#product',
+      url: 'https://example.com/products/widget',
+      image: ['https://example.com/cdn/widget.jpg'],
+      offers: {
+        url: 'https://example.com/products/buy',
+      },
+    });
+  });
+
+  it('leaves protocol-relative and non-url text values unchanged', () => {
+    const result = processRawPayload({
+      url: 'https://example.com/page',
+      finalUrl: 'https://example.com/page',
+      schemas: extractSchemasFromHtml(`
+        <script type="application/ld+json">
+          {
+            "@context": "https://schema.org",
+            "@type": "Organization",
+            "name": "/not-a-url-name",
+            "logo": "//cdn.example.com/logo.png"
+          }
+        </script>
+      `),
+    });
+
+    expect(result.entitiesForGraphResolver[0]).toMatchObject({
+      name: '/not-a-url-name',
+      logo: '//cdn.example.com/logo.png',
+    });
+  });
+
   it('supports module-style microdata children AST payloads', () => {
     const result = processRawPayload({
       schemas: [

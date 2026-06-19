@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {
+  auditSchemaQuality,
   processRawPayload,
   scrapeJsonLdInput,
   scrapeSchema,
@@ -9,6 +10,7 @@ import {
   verifyGraphResolutionHealth,
   type AuditActionResult,
   type GraphResolutionHealthReport,
+  type QualityWarning,
   type ScrapeResult,
   type ScrapeRenderMode,
 } from './src';
@@ -43,7 +45,9 @@ interface ResolvedAuditReport {
   generatedAt: string;
   entitiesForGraphResolver: GraphEntity[];
   resolvedEntities: GraphEntity[];
+  scrapeWarnings: string[];
   detectedSyntaxErrors: AuditActionResult['detectedSyntaxErrors'];
+  qualityWarnings: QualityWarning[];
   primaryRoot: GraphEntity | null;
   orphanRoots: GraphEntity[];
   health: GraphResolutionHealthReport | null;
@@ -274,6 +278,7 @@ function buildResolvedAuditReport(extractedData: ScrapeResult): ResolvedAuditRep
   const health = primaryRoot
     ? verifyGraphResolutionHealth(entities, primaryRoot, { log: false, color: false })
     : null;
+  const qualityWarnings = auditSchemaQuality(entities);
 
   return {
     url: extractedData.url,
@@ -281,7 +286,9 @@ function buildResolvedAuditReport(extractedData: ScrapeResult): ResolvedAuditRep
     generatedAt: new Date().toISOString(),
     entitiesForGraphResolver: entities,
     resolvedEntities: resolvedTreeArray,
+    scrapeWarnings: extractedData.warnings ?? [],
     detectedSyntaxErrors: graphOutput.detectedSyntaxErrors,
+    qualityWarnings,
     primaryRoot,
     orphanRoots,
     health,
@@ -604,6 +611,8 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
   </div>
 
   <div id="diagnostic-panel"></div>
+  <div id="scrape-warning-panel"></div>
+  <div id="quality-panel"></div>
 
   <section>
     <h2>Schema Relationship Map</h2>
@@ -1160,6 +1169,79 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
       container.appendChild(alertCard);
     }
 
+    function renderScrapeWarnings(warnings, container) {
+      container.textContent = '';
+      if (!warnings || warnings.length === 0) return;
+
+      const warningCard = document.createElement('div');
+      warningCard.className = 'alert-card';
+      warningCard.style.background = '#fff7ed';
+      warningCard.style.borderColor = '#fed7aa';
+
+      const title = document.createElement('h2');
+      title.className = 'alert-title';
+      title.style.color = '#9a3412';
+      title.textContent = 'Scrape Warnings (' + warnings.length + ')';
+      warningCard.appendChild(title);
+
+      warnings.forEach(warning => {
+        const p = document.createElement('p');
+        p.className = 'meta';
+        p.style.color = '#9a3412';
+        p.textContent = warning;
+        warningCard.appendChild(p);
+      });
+
+      container.appendChild(warningCard);
+    }
+
+    function renderQualityWarnings(warnings, container) {
+      container.textContent = '';
+
+      if (!warnings || warnings.length === 0) {
+        const successBox = document.createElement('section');
+        successBox.style.borderColor = '#bfdbfe';
+        successBox.style.background = '#eff6ff';
+        const title = document.createElement('h2');
+        title.style.color = '#1d4ed8';
+        title.style.margin = '0';
+        title.textContent = 'Semantic Sanity Warnings: None';
+        successBox.appendChild(title);
+        container.appendChild(successBox);
+        return;
+      }
+
+      const warningCard = document.createElement('div');
+      warningCard.className = 'alert-card';
+      warningCard.style.background = '#fffbeb';
+      warningCard.style.borderColor = '#fde68a';
+
+      const title = document.createElement('h2');
+      title.className = 'alert-title';
+      title.style.color = '#92400e';
+      title.textContent = 'Semantic Sanity Warnings (' + warnings.length + ')';
+      warningCard.appendChild(title);
+
+      warnings.forEach(warning => {
+        const item = document.createElement('div');
+        item.style.marginTop = '12px';
+        item.style.borderTop = '1px solid #fde68a';
+        item.style.paddingTop = '10px';
+
+        const summary = document.createElement('p');
+        summary.style.margin = '0 0 4px';
+        appendText(summary, 'node-key', warning.entityType + '.' + warning.property + ': ');
+        const message = document.createElement('span');
+        message.textContent = warning.message;
+        summary.appendChild(message);
+        item.appendChild(summary);
+
+        warningCard.appendChild(item);
+      });
+
+      container.appendChild(warningCard);
+    }
+
     function setCollapsed(collapsed) {
       document.querySelectorAll('.node-toggle').forEach(toggle => {
         toggle.classList.toggle('collapsed', collapsed);
@@ -1170,6 +1252,8 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
     }
 
     renderDiagnostics(reportData.detectedSyntaxErrors, document.getElementById('diagnostic-panel'));
+    renderScrapeWarnings(reportData.scrapeWarnings, document.getElementById('scrape-warning-panel'));
+    renderQualityWarnings(reportData.qualityWarnings, document.getElementById('quality-panel'));
     renderEntityTree(reportData.primaryRoot, document.getElementById('primary-tree-root'));
     renderOrphans(reportData.orphanRoots, document.getElementById('orphan-tree-root'));
     renderResolvedForest(reportData.resolvedEntities, document.getElementById('resolved-forest-root'));

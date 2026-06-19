@@ -49,7 +49,12 @@ export {
   homogenizeMicrodataAst,
   homogenizeSchemaFormat,
 } from './analyzer/formatHomogenizer';
+export { auditSchemaQuality } from './analyzer/schemaQuality';
 export { validateAndParseJSON } from './analyzer/syntaxValidator';
+export {
+  canonicalizeSchemaUrls,
+  canonicalizeStringPaths,
+} from './analyzer/urlCanonicalizer';
 export type {
   ASTNode,
   SchemaLikeBlock,
@@ -58,3 +63,4 @@ export type {
   SyntaxErrorDetail,
   ValidationReport,
 } from './analyzer/syntaxValidator';
+export type { QualityWarning } from './analyzer/schemaQuality';

@@ -24,16 +24,22 @@ export type ResolvedGraphNode =
   | null
   | undefined;
 
-const ROOT_TYPE_PRIORITY = [
-  'Product',
-  'Service',
-  'Article',
-  'BlogPosting',
-  'WebPage',
-  'BreadcrumbList',
-  'Organization',
-  'LocalBusiness',
-];
+const MAX_MERGE_DEPTH = 25;
+const MAX_MERGED_ARRAY_ITEMS = 150;
+
+const ROOT_TYPE_WEIGHTS: Record<string, number> = {
+  ProductGroup: 100,
+  Product: 95,
+  Service: 94,
+  Article: 92,
+  BlogPosting: 91,
+  WebPage: 90,
+  CollectionPage: 85,
+  WebSite: 80,
+  BreadcrumbList: 60,
+  Organization: 50,
+  LocalBusiness: 45,
+};
 
 export function consolidateGraphEntities(entities: GraphEntity[]): GraphEntity[] {
   const registry = new Map<string, GraphEntity>();
@@ -93,12 +99,18 @@ export function selectBestRootEntity(
 export function selectBestRootIndex(
   resolvedEntities: GraphEntity[]
 ): number {
-  for (const type of ROOT_TYPE_PRIORITY) {
-    const index = resolvedEntities.findIndex(entity => entityHasType(entity, type));
-    if (index >= 0) return index;
-  }
+  let bestIndex = -1;
+  let bestScore = Number.NEGATIVE_INFINITY;
 
-  return resolvedEntities.length > 0 ? 0 : -1;
+  resolvedEntities.forEach((entity, index) => {
+    const score = rootScore(entity);
+    if (score > bestScore) {
+      bestScore = score;
+      bestIndex = index;
+    }
+  });
+
+  return bestIndex;
 }
 
 export function selectUnlinkedRootEntities(
@@ -234,9 +246,17 @@ function entityScore(entity: GraphEntity): number {
   return Object.keys(entity).length + (entity['@type'] ? 5 : 0);
 }
 
-function mergeConsolidatedEntity(primary: GraphEntity, secondary: GraphEntity): GraphEntity {
+function mergeConsolidatedEntity(
+  primary: GraphEntity,
+  secondary: GraphEntity,
+  currentDepth = 0
+): GraphEntity {
   const merged = cloneValue(primary);
   const mergedMeta = mergeEntityMeta(primary._meta, secondary._meta);
+
+  if (currentDepth > MAX_MERGE_DEPTH) {
+    return merged;
+  }
 
   if (mergedMeta) {
     merged._meta = mergedMeta;
@@ -263,7 +283,11 @@ function mergeConsolidatedEntity(primary: GraphEntity, secondary: GraphEntity): 
     }
 
     if (isRecord(existing) && isRecord(value)) {
-      merged[key] = mergeConsolidatedEntity(existing as GraphEntity, value as GraphEntity);
+      merged[key] = mergeConsolidatedEntity(
+        existing as GraphEntity,
+        value as GraphEntity,
+        currentDepth + 1
+      );
     }
   }
 
@@ -289,7 +313,22 @@ function mergeEntityMeta(
   };
 }
 
-function deepMerge(first: unknown, second: unknown): GraphEntity {
+function rootScore(entity: GraphEntity): number {
+  const typeScore = typeValues(entity['@type'])
+    .map(type => ROOT_TYPE_WEIGHTS[type] ?? 10)
+    .reduce((highest, score) => Math.max(highest, score), 10);
+  const idBonus = entity['@id'] ? 5 : 0;
+  const urlBonus = entity.url ? 2 : 0;
+  const richnessBonus = Math.min(Object.keys(entity).length, 20) / 10;
+
+  return typeScore + idBonus + urlBonus + richnessBonus;
+}
+
+function deepMerge(first: unknown, second: unknown, currentDepth = 0): GraphEntity {
+  if (currentDepth > MAX_MERGE_DEPTH) {
+    return isRecord(first) ? first as GraphEntity : {};
+  }
+
   if (!isRecord(first)) return isRecord(second) ? second : {};
   if (!isRecord(second)) return first as GraphEntity;
 
@@ -297,7 +336,7 @@ function deepMerge(first: unknown, second: unknown): GraphEntity {
 
   for (const [key, value] of Object.entries(second)) {
     if (key in merged) {
-      merged[key] = mergeValue(merged[key], value, key);
+      merged[key] = mergeValue(merged[key], value, key, currentDepth);
     } else {
       merged[key] = value;
     }
@@ -306,7 +345,12 @@ function deepMerge(first: unknown, second: unknown): GraphEntity {
   return merged;
 }
 
-function mergeValue(first: unknown, second: unknown, key: string): unknown {
+function mergeValue(
+  first: unknown,
+  second: unknown,
+  key: string,
+  currentDepth = 0
+): unknown {
   if (key === '@type') return mergeTypeValues(first, second);
 
   if (Array.isArray(first) && Array.isArray(second)) {
@@ -314,7 +358,7 @@ function mergeValue(first: unknown, second: unknown, key: string): unknown {
   }
 
   if (isRecord(first) && isRecord(second)) {
-    return deepMerge(first, second);
+    return deepMerge(first, second, currentDepth + 1);
   }
 
   return second ?? first;
@@ -328,7 +372,7 @@ function mergeArrayValues(first: unknown[], second: unknown[]): unknown[] {
     merged.push(cloneValue(item));
   }
 
-  return merged;
+  return merged.slice(0, MAX_MERGED_ARRAY_ITEMS);
 }
 
 function mergeTypeValues(first: unknown, second: unknown): unknown {

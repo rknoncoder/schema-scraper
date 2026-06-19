@@ -4,6 +4,7 @@ import {
   type SyntaxErrorDetail,
   type ValidationReport,
 } from '../analyzer/syntaxValidator';
+import { canonicalizeSchemaUrls } from '../analyzer/urlCanonicalizer';
 import { scrapeSchema, type ScrapeResult } from '../scraper';
 import type { GraphEntityMeta } from '../tree/graphResolver';
 import type { TreeNode } from '../tree/treeNode';
@@ -56,7 +57,10 @@ export function processRawPayload(rawPayload: ScrapeResult | any): AuditActionRe
   }
 
   return {
-    entitiesForGraphResolver: unifiedEntities,
+    entitiesForGraphResolver: canonicalizeSchemaUrls(
+      unifiedEntities,
+      rawPayload?.finalUrl ?? rawPayload?.url
+    ),
     detectedSyntaxErrors: syntaxErrors,
   };
 }
