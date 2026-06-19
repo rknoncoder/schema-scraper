@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extractSchemasFromHtml } from '../src';
+import { extractSchemasFromHtml, scrapeJsonLdInput } from '../src';
 
 describe('schema scraper', () => {
   it('returns raw JSON-LD data and a matching source tree', () => {
@@ -57,5 +57,29 @@ describe('schema scraper', () => {
     expect(schemas[0].raw).toContain('"@type"');
     expect(schemas[0].parseError).toBeTruthy();
     expect(schemas[0].data).toBeUndefined();
+  });
+
+  it('creates raw scrape output from direct JSON-LD input', () => {
+    const result = scrapeJsonLdInput(`
+      <script type="application/ld+json">
+        { "@context": "https://schema.org", "@type": "Product", "name": "Input Product" }
+      </script>
+    `, 'file://schema.json');
+
+    expect(result).toMatchObject({
+      url: 'file://schema.json',
+      finalUrl: 'file://schema.json',
+      schemas: [
+        {
+          source: 'json-ld',
+          raw: '{ "@context": "https://schema.org", "@type": "Product", "name": "Input Product" }',
+          data: {
+            '@type': 'Product',
+            name: 'Input Product',
+          },
+          syntaxStatus: 'valid',
+        },
+      ],
+    });
   });
 });

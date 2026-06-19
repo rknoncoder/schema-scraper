@@ -62,6 +62,28 @@ describe('audit action orchestration', () => {
     ]);
   });
 
+  it('adds discovery metadata when a scrape source mode is present', () => {
+    const result = processRawPayload({
+      schemas: extractSchemasFromHtml(`
+        <script type="application/ld+json">
+          { "@context": "https://schema.org", "@type": "Product", "@id": "#product" }
+        </script>
+      `, 'rendered'),
+    });
+
+    expect(result.entitiesForGraphResolver).toEqual([
+      {
+        '@context': 'https://schema.org',
+        '@type': 'Product',
+        '@id': '#product',
+        _meta: {
+          sourceMode: 'rendered',
+          extractionChannel: 'json-ld',
+        },
+      },
+    ]);
+  });
+
   it('supports module-style microdata children AST payloads', () => {
     const result = processRawPayload({
       schemas: [

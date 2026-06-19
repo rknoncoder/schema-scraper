@@ -3,12 +3,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {
   processRawPayload,
+  scrapeJsonLdInput,
   scrapeSchema,
   TextReporter,
   verifyGraphResolutionHealth,
   type AuditActionResult,
   type GraphResolutionHealthReport,
   type ScrapeResult,
+  type ScrapeRenderMode,
 } from './src';
 import {
   buildGraphEntityMap,
@@ -27,7 +29,11 @@ interface CliOptions {
   compact: boolean;
   format?: ExportFormat;
   graphReady: boolean;
+  jsonLd?: string;
+  jsonLdFile?: string;
   output?: string;
+  renderMode?: ScrapeRenderMode;
+  stdin: boolean;
   tree: boolean;
 }
 
@@ -46,14 +52,14 @@ interface ResolvedAuditReport {
 async function main(argv = process.argv): Promise<void> {
   const options = parseArgs(argv.slice(2));
 
-  if (!options.url) {
-    console.error('Please pass --url <url>.');
+  if (!options.url && !hasJsonLdInput(options)) {
+    console.error('Please pass --url <url>, --jsonld-file <path>, --jsonld <code>, or --stdin.');
     process.exitCode = 1;
     return;
   }
 
   try {
-    const extractedData = await scrapeSchema(options.url);
+    const extractedData = await loadScrapeInput(options);
 
     if (options.output || options.format) {
       const report = buildResolvedAuditReport(extractedData);
@@ -116,6 +122,7 @@ function parseArgs(args: string[]): CliOptions {
   const options: CliOptions = {
     compact: false,
     graphReady: false,
+    stdin: false,
     tree: false,
   };
 
@@ -129,6 +136,53 @@ function parseArgs(args: string[]): CliOptions {
 
     if (arg === '--graph-ready') {
       options.graphReady = true;
+      continue;
+    }
+
+    if (arg === '--stdin') {
+      options.stdin = true;
+      continue;
+    }
+
+    if (arg === '--jsonld-file' || arg === '--input') {
+      options.jsonLdFile = args[index + 1];
+      index += 1;
+      continue;
+    }
+
+    if (arg.startsWith('--jsonld-file=')) {
+      options.jsonLdFile = arg.slice('--jsonld-file='.length);
+      continue;
+    }
+
+    if (arg.startsWith('--input=')) {
+      options.jsonLdFile = arg.slice('--input='.length);
+      continue;
+    }
+
+    if (arg === '--jsonld') {
+      options.jsonLd = args[index + 1];
+      index += 1;
+      continue;
+    }
+
+    if (arg.startsWith('--jsonld=')) {
+      options.jsonLd = arg.slice('--jsonld='.length);
+      continue;
+    }
+
+    if (arg === '--rendered') {
+      options.renderMode = 'rendered';
+      continue;
+    }
+
+    if (arg === '--dual-pass') {
+      options.renderMode = 'dual-pass';
+      continue;
+    }
+
+    if (arg === '--static') {
+      options.renderMode = 'static';
       continue;
     }
 
@@ -171,6 +225,36 @@ function parseArgs(args: string[]): CliOptions {
   }
 
   return options;
+}
+
+async function loadScrapeInput(options: CliOptions): Promise<ScrapeResult> {
+  if (options.jsonLdFile) {
+    const absolutePath = path.resolve(options.jsonLdFile);
+    return scrapeJsonLdInput(
+      fs.readFileSync(absolutePath, 'utf8'),
+      `file://${absolutePath}`
+    );
+  }
+
+  if (options.stdin) {
+    return scrapeJsonLdInput(fs.readFileSync(0, 'utf8'), 'stdin://jsonld');
+  }
+
+  if (options.jsonLd) {
+    return scrapeJsonLdInput(options.jsonLd, 'inline://jsonld');
+  }
+
+  if (!options.url) {
+    throw new Error('No input source provided.');
+  }
+
+  return scrapeSchema(options.url, {
+    renderMode: options.renderMode,
+  });
+}
+
+function hasJsonLdInput(options: CliOptions): boolean {
+  return Boolean(options.jsonLdFile || options.jsonLd || options.stdin);
 }
 
 function buildResolvedAuditReport(extractedData: ScrapeResult): ResolvedAuditReport {
@@ -297,8 +381,22 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
     .node-toggle::before { content: "\\25BE"; }
     .node-toggle.collapsed::before { content: "\\25B8"; }
     .node-spacer { width: 18px; display: inline-block; }
-    .node-key { font-weight: 650; color: #334155; }
-    .node-index { font-weight: 650; color: #8b5cf6; font-family: Consolas, "SFMono-Regular", monospace; }
+    .node-key { font-weight: 600; color: var(--muted); }
+    .node-key-structural {
+      color: var(--accent);
+      font-style: italic;
+      font-weight: 800;
+    }
+    .node-index {
+      background: #faf5ff;
+      border: 1px solid #e9d5ff;
+      border-radius: 4px;
+      color: #8b5cf6;
+      font-family: Consolas, "SFMono-Regular", monospace;
+      font-size: 0.85rem;
+      font-weight: 700;
+      padding: 1px 4px;
+    }
     .node-type {
       background: var(--type-bg);
       color: var(--type-text);
@@ -317,6 +415,18 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
       font-family: Consolas, "SFMono-Regular", monospace;
       font-weight: 700;
     }
+    .source-provenance-badge {
+      border-radius: 4px;
+      font-size: 0.72rem;
+      font-weight: 800;
+      margin-left: 6px;
+      padding: 1px 6px;
+      text-transform: uppercase;
+    }
+    .source-static { background: #f1f5f9; color: #475569; }
+    .source-rendered { background: #fef3c7; color: #b45309; }
+    .source-merged { background: #dcfce7; color: #15803d; }
+    .source-mixed { background: #e0e7ff; color: #3730a3; }
     .nested-container {
       display: block;
       margin-top: 4px;
@@ -325,6 +435,116 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
       border-left: 2px dashed #cbd5e1;
     }
     .nested-container.hidden { display: none; }
+    .visual-connected-tree ul {
+      list-style-type: none;
+      margin: 0;
+      padding-left: 14px;
+      position: relative;
+    }
+    .visual-connected-tree li {
+      margin: 0;
+      padding: 6px 0 6px 20px;
+      position: relative;
+    }
+    .visual-connected-tree .nested-container {
+      border-left: 0;
+      display: block;
+      margin-left: 6px;
+      margin-top: 4px;
+      padding-left: 14px;
+      position: relative;
+    }
+    .visual-connected-tree .nested-container::before {
+      border-left: 1px dashed var(--border);
+      bottom: 0;
+      content: "";
+      left: 0;
+      position: absolute;
+      top: 0;
+      width: 1px;
+    }
+    .visual-connected-tree .nested-container.hidden { display: none; }
+    .visual-connected-tree li::before {
+      border-top: 1px dashed var(--border);
+      content: "";
+      height: 1px;
+      left: 0;
+      position: absolute;
+      top: 18px;
+      width: 20px;
+    }
+    .visual-connected-tree li:last-child::after {
+      background: var(--panel);
+      bottom: 0;
+      content: "";
+      left: -14px;
+      position: absolute;
+      top: 18px;
+      width: 3px;
+    }
+    .visual-connected-tree .node-toggle {
+      align-items: center;
+      display: inline-flex;
+      gap: 6px;
+      width: auto;
+    }
+    .schema-link-map {
+      background: #fbfdff;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      min-height: 520px;
+      overflow: auto;
+      position: relative;
+    }
+    .schema-link-map::before {
+      bottom: 18px;
+      color: rgba(255, 153, 124, 0.35);
+      content: "Schema Map";
+      font-size: 2.1rem;
+      left: 24px;
+      pointer-events: none;
+      position: absolute;
+      z-index: 0;
+    }
+    .schema-link-map svg {
+      display: block;
+      min-height: 520px;
+      position: relative;
+      width: 100%;
+      z-index: 1;
+    }
+    .schema-link-map .map-edge {
+      stroke: #8ec5e8;
+      stroke-width: 1.6;
+    }
+    .schema-link-map .map-edge-label {
+      fill: #64748b;
+      font-family: Consolas, "SFMono-Regular", monospace;
+      font-size: 12px;
+    }
+    .schema-link-map .map-node circle {
+      stroke: rgba(255,255,255,0.95);
+      stroke-width: 3;
+    }
+    .schema-link-map .map-node text {
+      fill: #0f172a;
+      font-size: 14px;
+      paint-order: stroke;
+      stroke: rgba(255,255,255,0.9);
+      stroke-width: 4px;
+      stroke-linejoin: round;
+    }
+    .schema-link-map .map-empty {
+      color: var(--muted);
+      padding: 18px;
+    }
+    .schema-map-summary {
+      color: var(--muted);
+      font-size: 0.86rem;
+      padding: 12px 14px 0;
+      position: relative;
+      z-index: 1;
+    }
     pre {
       overflow: auto;
       padding: 16px;
@@ -386,6 +606,12 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
   <div id="diagnostic-panel"></div>
 
   <section>
+    <h2>Schema Relationship Map</h2>
+    <p class="meta">Node-link visualization of schema objects and the properties connecting them.</p>
+    <div id="schema-link-map-root" class="schema-link-map"></div>
+  </section>
+
+  <section>
     <h2>Primary Semantic Entity Tree</h2>
     <div id="primary-tree-root"></div>
   </section>
@@ -399,6 +625,12 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
     <h2>Complete Resolved Graph Forest</h2>
     <p class="meta">Every top-level entity found on the page, with known in-page references expanded.</p>
     <div id="resolved-forest-root"></div>
+  </section>
+
+  <section>
+    <h2>Graph Structural Tree View</h2>
+    <p class="meta">Alternative visualization mapping nested properties with parent-child connection lines.</p>
+    <div id="visual-tree-root" class="visual-connected-tree"></div>
   </section>
 
   <section>
@@ -435,7 +667,10 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
     }
 
     function keyClassName(key) {
-      return isArrayIndex(key) ? 'node-index' : 'node-key';
+      if (isArrayIndex(key)) return 'node-index';
+      return key === '@type' || key === '@id' || key === '@context'
+        ? 'node-key node-key-structural'
+        : 'node-key';
     }
 
     function appendTypeBadge(parent, value) {
@@ -444,19 +679,49 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
       appendText(parent, 'node-type', type);
     }
 
-    function createPropertyRow(key, value) {
+    function appendSourceBadge(parent, meta) {
+      if (!meta || !meta.sourceMode) return;
+      const span = document.createElement('span');
+      span.className = 'source-provenance-badge source-' + meta.sourceMode;
+      span.textContent = meta.sourceMode + (meta.extractionChannel ? ' / ' + meta.extractionChannel : '');
+      parent.appendChild(span);
+    }
+
+    function metaForValue(value, parentMeta) {
+      if (value && typeof value === 'object' && !Array.isArray(value) && value._meta) {
+        return value._meta;
+      }
+
+      return parentMeta;
+    }
+
+    function visibleObjectKeys(value) {
+      return Object.keys(value).filter(key => key !== '@context' && key !== '_meta');
+    }
+
+    function createPrimitiveArrayRow(index, value) {
       const li = document.createElement('li');
       li.className = 'tree-node';
+      appendText(li, 'node-index', '[' + index + ']:');
+      appendText(li, 'node-value', ' ' + JSON.stringify(value));
+      return li;
+    }
+
+    function createPropertyRow(key, value, parentMeta = null) {
+      const li = document.createElement('li');
+      li.className = 'tree-node';
+      const currentMeta = metaForValue(value, parentMeta);
 
       if (value && typeof value === 'object' && !Array.isArray(value) && '$ref' in value) {
         appendText(li, keyClassName(key), key + ':');
-        appendText(li, 'node-ref', ' → ref: ' + value.$ref);
+        appendText(li, 'node-ref', ' -> ref: ' + value.$ref);
         return li;
       }
 
       if (!value || typeof value !== 'object') {
         appendText(li, keyClassName(key), key + ':');
         appendText(li, 'node-value', ' ' + JSON.stringify(value));
+        if (key === '@type') appendSourceBadge(li, currentMeta);
         return li;
       }
 
@@ -464,6 +729,7 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
       toggle.className = 'node-toggle';
       appendText(toggle, keyClassName(key), key);
       appendTypeBadge(toggle, value);
+      appendSourceBadge(toggle, currentMeta);
       li.appendChild(toggle);
       const childContainer = document.createElement('div');
       childContainer.className = 'nested-container';
@@ -477,12 +743,16 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
 
       if (Array.isArray(value)) {
         value.forEach((item, index) => {
-          childContainer.appendChild(createPropertyRow('[' + index + ']', item));
+          if (item !== null && typeof item === 'object') {
+            childContainer.appendChild(createPropertyRow('[' + index + ']', item, currentMeta));
+            return;
+          }
+
+          childContainer.appendChild(createPrimitiveArrayRow(index, item));
         });
       } else {
-        Object.keys(value).forEach(key => {
-          if (key === '@context') return;
-          childContainer.appendChild(createPropertyRow(key, value[key]));
+        visibleObjectKeys(value).forEach(key => {
+          childContainer.appendChild(createPropertyRow(key, value[key], currentMeta));
         });
       }
 
@@ -501,9 +771,9 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
 
       const ul = document.createElement('ul');
       ul.className = 'schema-tree';
-      Object.keys(rootEntity).forEach(key => {
-        if (key === '@context') return;
-        ul.appendChild(createPropertyRow(key, rootEntity[key]));
+      const rootMeta = rootEntity && rootEntity._meta ? rootEntity._meta : null;
+      visibleObjectKeys(rootEntity).forEach(key => {
+        ul.appendChild(createPropertyRow(key, rootEntity[key], rootMeta));
       });
       container.appendChild(ul);
     }
@@ -550,6 +820,278 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
         container.appendChild(wrapper);
         renderEntityTree(entity, wrapper);
       });
+    }
+
+    function renderSchemaRelationshipMap(rootEntity, container) {
+      container.textContent = '';
+      if (!rootEntity || typeof rootEntity !== 'object') {
+        const p = document.createElement('p');
+        p.className = 'map-empty';
+        p.textContent = 'No schema relationship data present.';
+        container.appendChild(p);
+        return;
+      }
+
+      const graph = buildRelationshipGraph(rootEntity, 90);
+      if (graph.nodes.length === 0) {
+        const p = document.createElement('p');
+        p.className = 'map-empty';
+        p.textContent = 'No schema relationships detected.';
+        container.appendChild(p);
+        return;
+      }
+
+      layoutRelationshipGraph(graph);
+      const summary = document.createElement('p');
+      summary.className = 'schema-map-summary';
+      summary.textContent = graph.nodes.length + ' nodes / ' + graph.links.length + ' links';
+      container.appendChild(summary);
+      drawRelationshipGraph(graph, container);
+    }
+
+    function buildRelationshipGraph(rootEntity, maxNodes) {
+      const nodes = [];
+      const links = [];
+      const seen = new WeakMap();
+
+      function addNode(value, depth) {
+        if (seen.has(value)) return seen.get(value);
+
+        const node = {
+          id: 'node-' + nodes.length,
+          depth,
+          label: schemaMapNodeLabel(value),
+          type: schemaMapType(value),
+          color: schemaMapColor(schemaMapType(value)),
+          x: 0,
+          y: 0,
+        };
+
+        nodes.push(node);
+        seen.set(value, node);
+        return node;
+      }
+
+      function visit(value, depth) {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+        if (nodes.length >= maxNodes) return null;
+
+        const parentNode = addNode(value, depth);
+
+        visibleObjectKeys(value).forEach(key => {
+          if (key.charAt(0) === '@') return;
+          const childValue = value[key];
+
+          if (Array.isArray(childValue)) {
+            childValue.forEach(item => {
+              if (!isRelationshipObject(item) || nodes.length >= maxNodes) return;
+              const childNode = visit(item, depth + 1);
+              if (childNode) links.push({ source: parentNode, target: childNode, label: key });
+            });
+            return;
+          }
+
+          if (!isRelationshipObject(childValue) || nodes.length >= maxNodes) return;
+          const childNode = visit(childValue, depth + 1);
+          if (childNode) links.push({ source: parentNode, target: childNode, label: key });
+        });
+
+        return parentNode;
+      }
+
+      visit(rootEntity, 0);
+
+      return {
+        nodes,
+        links: dedupeLinks(links),
+      };
+    }
+
+    function isRelationshipObject(value) {
+      return Boolean(
+        value &&
+        typeof value === 'object' &&
+        !Array.isArray(value) &&
+        !('$ref' in value) &&
+        (value['@type'] || value['@id'] || value.name || value.url)
+      );
+    }
+
+    function dedupeLinks(links) {
+      const seen = new Set();
+      return links.filter(link => {
+        const key = link.source.id + '|' + link.target.id + '|' + link.label;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    }
+
+    function schemaMapType(value) {
+      if (!value || typeof value !== 'object') return 'Schema';
+      const type = value['@type'];
+      if (Array.isArray(type) && type.length > 0) return String(type[0]);
+      return typeof type === 'string' && type.length > 0 ? type : 'Schema';
+    }
+
+    function schemaMapNodeLabel(value) {
+      const type = schemaMapType(value);
+      const name = typeof value.name === 'string' && value.name.length > 0
+        ? value.name
+        : undefined;
+      const price = value.price
+        ? String(value.price) + (value.priceCurrency ? ' ' + String(value.priceCurrency) : '')
+        : undefined;
+      const rating = value.ratingValue
+        ? 'rating ' + String(value.ratingValue)
+        : undefined;
+      const suffix = name || price || rating || stringTail(value['@id']) || stringTail(value.url);
+      return suffix ? type + ': ' + truncateText(suffix, 42) : type;
+    }
+
+    function schemaMapColor(type) {
+      if (type === 'Product') return '#d78bd7';
+      if (type === 'Offer') return '#ff9b9b';
+      if (type === 'Organization') return '#8d5a4b';
+      if (type === 'Brand') return '#c7dc8c';
+      if (type === 'AggregateRating') return '#ff9b9b';
+      if (type === 'VideoObject') return '#9ec5fe';
+      if (type === 'ItemList' || type === 'ListItem') return '#86d1bd';
+      if (type === 'ImageObject') return '#a7c7e7';
+      return '#b8a4e3';
+    }
+
+    function stringTail(value) {
+      if (typeof value !== 'string' || value.length === 0) return undefined;
+      const cleaned = value.replace(/[#/?=&]+/g, '/').split('/').filter(Boolean);
+      return cleaned.length > 0 ? cleaned[cleaned.length - 1] : value;
+    }
+
+    function truncateText(value, maxLength) {
+      const text = String(value);
+      return text.length > maxLength ? text.slice(0, maxLength - 1) + '...' : text;
+    }
+
+    function layoutRelationshipGraph(graph) {
+      const width = 980;
+      const height = Math.max(520, 420 + graph.nodes.length * 7);
+      const centerX = width / 2;
+      const centerY = height / 2;
+      const byDepth = new Map();
+
+      graph.width = width;
+      graph.height = height;
+
+      graph.nodes.forEach(node => {
+        const bucket = byDepth.get(node.depth) || [];
+        bucket.push(node);
+        byDepth.set(node.depth, bucket);
+      });
+
+      graph.nodes.forEach(node => {
+        if (node.depth === 0) {
+          node.x = centerX;
+          node.y = centerY;
+          return;
+        }
+
+        const bucket = byDepth.get(node.depth) || [node];
+        const index = bucket.indexOf(node);
+        const radius = Math.min(120 + node.depth * 130, Math.min(width, height) * 0.44);
+        const angleStep = (Math.PI * 2) / Math.max(bucket.length, 1);
+        const angle = -Math.PI / 2 + angleStep * index + node.depth * 0.28;
+        node.x = centerX + Math.cos(angle) * radius;
+        node.y = centerY + Math.sin(angle) * radius;
+      });
+    }
+
+    function drawRelationshipGraph(graph, container) {
+      const svg = createSvgElement('svg');
+      svg.setAttribute('viewBox', '0 0 ' + graph.width + ' ' + graph.height);
+      svg.setAttribute('role', 'img');
+      svg.setAttribute('aria-label', 'Schema relationship node map');
+
+      const defs = createSvgElement('defs');
+      const marker = createSvgElement('marker');
+      marker.setAttribute('id', 'schema-arrow');
+      marker.setAttribute('markerWidth', '8');
+      marker.setAttribute('markerHeight', '8');
+      marker.setAttribute('refX', '7');
+      marker.setAttribute('refY', '4');
+      marker.setAttribute('orient', 'auto');
+      const arrow = createSvgElement('path');
+      arrow.setAttribute('d', 'M0,0 L8,4 L0,8 Z');
+      arrow.setAttribute('fill', '#8ec5e8');
+      marker.appendChild(arrow);
+      defs.appendChild(marker);
+      svg.appendChild(defs);
+
+      graph.links.forEach(link => drawSchemaLink(svg, link));
+      graph.nodes.forEach(node => drawSchemaNode(svg, node));
+
+      container.appendChild(svg);
+    }
+
+    function drawSchemaLink(svg, link) {
+      const points = shortenLine(link.source.x, link.source.y, link.target.x, link.target.y, 18);
+      const line = createSvgElement('line');
+      line.setAttribute('class', 'map-edge');
+      line.setAttribute('x1', points.x1);
+      line.setAttribute('y1', points.y1);
+      line.setAttribute('x2', points.x2);
+      line.setAttribute('y2', points.y2);
+      line.setAttribute('marker-end', 'url(#schema-arrow)');
+      svg.appendChild(line);
+
+      const label = createSvgElement('text');
+      label.setAttribute('class', 'map-edge-label');
+      label.setAttribute('text-anchor', 'middle');
+      label.setAttribute('x', (points.x1 + points.x2) / 2);
+      label.setAttribute('y', (points.y1 + points.y2) / 2 - 6);
+      label.textContent = link.label;
+      svg.appendChild(label);
+    }
+
+    function drawSchemaNode(svg, node) {
+      const group = createSvgElement('g');
+      group.setAttribute('class', 'map-node');
+      group.setAttribute('transform', 'translate(' + node.x + ' ' + node.y + ')');
+
+      const circle = createSvgElement('circle');
+      circle.setAttribute('r', node.depth === 0 ? '12' : '10');
+      circle.setAttribute('fill', node.color);
+      group.appendChild(circle);
+
+      const title = createSvgElement('title');
+      title.textContent = node.label;
+      group.appendChild(title);
+
+      const text = createSvgElement('text');
+      text.setAttribute('x', '14');
+      text.setAttribute('y', '5');
+      text.textContent = node.label;
+      group.appendChild(text);
+
+      svg.appendChild(group);
+    }
+
+    function shortenLine(x1, y1, x2, y2, padding) {
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      const length = Math.sqrt(dx * dx + dy * dy) || 1;
+      const ox = dx / length * padding;
+      const oy = dy / length * padding;
+
+      return {
+        x1: x1 + ox,
+        y1: y1 + oy,
+        x2: x2 - ox,
+        y2: y2 - oy,
+      };
+    }
+
+    function createSvgElement(name) {
+      return document.createElementNS('http://www.w3.org/2000/svg', name);
     }
 
     function renderDiagnostics(errors, container) {
@@ -631,6 +1173,8 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
     renderEntityTree(reportData.primaryRoot, document.getElementById('primary-tree-root'));
     renderOrphans(reportData.orphanRoots, document.getElementById('orphan-tree-root'));
     renderResolvedForest(reportData.resolvedEntities, document.getElementById('resolved-forest-root'));
+    renderSchemaRelationshipMap(reportData.primaryRoot, document.getElementById('schema-link-map-root'));
+    renderResolvedForest(reportData.resolvedEntities, document.getElementById('visual-tree-root'));
     document.getElementById('expand-all').addEventListener('click', () => setCollapsed(false));
     document.getElementById('collapse-all').addEventListener('click', () => setCollapsed(true));
   </script>

@@ -1,7 +1,13 @@
 export interface GraphEntity {
   '@id'?: string;
   '@type'?: string | string[];
+  _meta?: GraphEntityMeta;
   [property: string]: unknown;
+}
+
+export interface GraphEntityMeta {
+  sourceMode?: 'static' | 'rendered' | 'merged';
+  extractionChannel?: 'json-ld' | 'microdata' | 'rdfa' | 'mixed';
 }
 
 export interface ReferenceNode {
@@ -189,7 +195,17 @@ function collectLinkedIdentitiesFromNode(value: unknown, identities: Set<string>
 }
 
 function primaryIdentity(value: Record<string, unknown>): string | undefined {
-  return stringValue(value['@id']) ?? stringValue(value.url);
+  const id = stringValue(value['@id']);
+  if (id) return id;
+
+  const url = stringValue(value.url);
+  return url && isUrlReferenceOnly(value) ? url : undefined;
+}
+
+function isUrlReferenceOnly(value: Record<string, unknown>): boolean {
+  return Object.keys(value)
+    .filter(key => key !== '@context' && key !== '_meta')
+    .every(key => key === 'url');
 }
 
 function normalizeIdentity(value: string): string {
@@ -220,8 +236,15 @@ function entityScore(entity: GraphEntity): number {
 
 function mergeConsolidatedEntity(primary: GraphEntity, secondary: GraphEntity): GraphEntity {
   const merged = cloneValue(primary);
+  const mergedMeta = mergeEntityMeta(primary._meta, secondary._meta);
+
+  if (mergedMeta) {
+    merged._meta = mergedMeta;
+  }
 
   for (const [key, value] of Object.entries(secondary)) {
+    if (key === '_meta' || key === '@context') continue;
+
     const existing = merged[key];
 
     if (isEmptyValue(existing)) {
@@ -245,6 +268,25 @@ function mergeConsolidatedEntity(primary: GraphEntity, secondary: GraphEntity): 
   }
 
   return merged;
+}
+
+function mergeEntityMeta(
+  first: GraphEntityMeta | undefined,
+  second: GraphEntityMeta | undefined
+): GraphEntityMeta | undefined {
+  if (!first && !second) return undefined;
+  if (!first) return cloneValue(second);
+  if (!second) return cloneValue(first);
+
+  const firstMode = first.sourceMode;
+  const secondMode = second.sourceMode;
+  const firstChannel = first.extractionChannel;
+  const secondChannel = second.extractionChannel;
+
+  return {
+    sourceMode: firstMode === secondMode ? firstMode : 'merged',
+    extractionChannel: firstChannel === secondChannel ? firstChannel : 'mixed',
+  };
 }
 
 function deepMerge(first: unknown, second: unknown): GraphEntity {

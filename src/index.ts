@@ -1,6 +1,9 @@
 export {
   extractSchemasFromHtml,
+  scrapeJsonLdInput,
   scrapeSchema,
+  scrapeSchemaDualPass,
+  scrapeRenderedSchema,
 } from './scraper';
 export {
   auditUrl,
@@ -19,7 +22,10 @@ export {
 } from './tree/graphResolver';
 export type {
   RawSchemaBlock,
+  ScrapeOptions,
+  ScrapeRenderMode,
   ScrapeResult,
+  ScrapeSourceMode,
 } from './scraper';
 export type {
   AuditActionResult,
@@ -29,6 +35,7 @@ export type {
 export type { RenderOptions } from './reporter/textReporter';
 export type {
   GraphEntity,
+  GraphEntityMeta,
   ReferenceNode,
   ResolvedGraphNode,
 } from './tree/graphResolver';

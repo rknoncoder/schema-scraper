@@ -5,6 +5,7 @@ import {
   type ValidationReport,
 } from '../analyzer/syntaxValidator';
 import { scrapeSchema, type ScrapeResult } from '../scraper';
+import type { GraphEntityMeta } from '../tree/graphResolver';
 import type { TreeNode } from '../tree/treeNode';
 import chalk from 'chalk';
 
@@ -43,12 +44,14 @@ export function processRawPayload(rawPayload: ScrapeResult | any): AuditActionRe
         syntaxErrors.push(audit.error);
       }
 
-      unifiedEntities.push(...entitiesFromParsedJsonLd(audit.parsedData));
+      unifiedEntities.push(
+        ...withDiscoveryMeta(entitiesFromParsedJsonLd(audit.parsedData), item)
+      );
       continue;
     }
 
     if (item?.source === 'microdata' || item?.source === 'rdfa') {
-      unifiedEntities.push(...entitiesFromAstItem(item));
+      unifiedEntities.push(...withDiscoveryMeta(entitiesFromAstItem(item), item));
     }
   }
 
@@ -85,6 +88,31 @@ export function verifyGraphResolutionHealth(
   }
 
   return report;
+}
+
+function withDiscoveryMeta(entities: JsonObject[], item: any): JsonObject[] {
+  const meta = discoveryMetaForItem(item);
+  if (!meta) return entities;
+
+  return entities.map(entity => ({
+    ...entity,
+    _meta: meta,
+  }));
+}
+
+function discoveryMetaForItem(item: any): GraphEntityMeta | undefined {
+  if (item?.sourceMode !== 'static' && item?.sourceMode !== 'rendered') return undefined;
+
+  const extractionChannel = item.source === 'json-ld'
+    || item.source === 'microdata'
+    || item.source === 'rdfa'
+      ? item.source
+      : undefined;
+
+  return {
+    sourceMode: item.sourceMode,
+    extractionChannel,
+  };
 }
 
 function parseJsonLdItem(item: any): ValidationReport {

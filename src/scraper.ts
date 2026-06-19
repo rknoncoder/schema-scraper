@@ -1,11 +1,24 @@
 import { extractAll, ExtractedSchema } from './extractors';
 import { fetchHtml } from './fetcher';
+import { fetchRenderedHtml } from './renderedFetcher';
 import { buildSourceTree } from './tree/sourceTreeBuilder';
 import { TreeNode } from './tree/treeNode';
-import type { SyntaxErrorDetail, ValidationReport } from './analyzer/syntaxValidator';
+import {
+  validateAndParseJSON,
+  type SyntaxErrorDetail,
+  type ValidationReport,
+} from './analyzer/syntaxValidator';
+
+export type ScrapeSourceMode = 'static' | 'rendered';
+export type ScrapeRenderMode = ScrapeSourceMode | 'dual-pass';
+
+export interface ScrapeOptions {
+  renderMode?: ScrapeRenderMode;
+}
 
 export interface RawSchemaBlock {
   source: ExtractedSchema['source'];
+  sourceMode?: ScrapeSourceMode;
   raw?: string;
   data?: object;
   parseError?: string;
@@ -20,7 +33,18 @@ export interface ScrapeResult {
   schemas: RawSchemaBlock[];
 }
 
-export async function scrapeSchema(url: string): Promise<ScrapeResult> {
+export async function scrapeSchema(
+  url: string,
+  options: ScrapeOptions = {}
+): Promise<ScrapeResult> {
+  if (options.renderMode === 'rendered') {
+    return scrapeRenderedSchema(url);
+  }
+
+  if (options.renderMode === 'dual-pass') {
+    return scrapeSchemaDualPass(url);
+  }
+
   const fetched = await fetchHtml(url);
 
   return {
@@ -30,17 +54,77 @@ export async function scrapeSchema(url: string): Promise<ScrapeResult> {
   };
 }
 
-export function extractSchemasFromHtml(html: string): RawSchemaBlock[] {
-  return extractAll(html).map((schema, index) => toRawSchemaBlock(schema, index));
+export async function scrapeRenderedSchema(url: string): Promise<ScrapeResult> {
+  const fetched = await fetchRenderedHtml(url);
+
+  return {
+    url,
+    finalUrl: fetched.finalUrl,
+    schemas: extractSchemasFromHtml(fetched.html, 'rendered'),
+  };
 }
 
-function toRawSchemaBlock(schema: ExtractedSchema, index: number): RawSchemaBlock {
+export function scrapeJsonLdInput(
+  rawJsonLd: string,
+  sourceLabel = 'inline-jsonld'
+): ScrapeResult {
+  const raw = stripJsonLdScriptWrapper(rawJsonLd);
+  const validation = validateAndParseJSON(raw);
+  const schema: ExtractedSchema = {
+    source: 'json-ld',
+    data: validation.parsedData ?? {},
+    raw,
+    parseError: validation.status === 'critical'
+      ? validation.error?.message ?? 'Invalid JSON-LD input.'
+      : undefined,
+    syntaxStatus: validation.status,
+    syntaxError: validation.error,
+  };
+
+  return {
+    url: sourceLabel,
+    finalUrl: sourceLabel,
+    schemas: [toRawSchemaBlock(schema, 0, 'static')],
+  };
+}
+
+export async function scrapeSchemaDualPass(url: string): Promise<ScrapeResult> {
+  const staticFetched = await fetchHtml(url);
+  const staticSchemas = extractSchemasFromHtml(staticFetched.html, 'static');
+  const renderedFetched = await fetchRenderedHtml(url);
+  const renderedSchemas = filterRenderedDuplicates(
+    staticSchemas,
+    extractSchemasFromHtml(renderedFetched.html, 'rendered')
+  );
+
+  return {
+    url,
+    finalUrl: renderedFetched.finalUrl || staticFetched.finalUrl,
+    schemas: [...staticSchemas, ...renderedSchemas],
+  };
+}
+
+export function extractSchemasFromHtml(
+  html: string,
+  sourceMode?: ScrapeSourceMode
+): RawSchemaBlock[] {
+  return extractAll(html).map((schema, index) =>
+    toRawSchemaBlock(schema, index, sourceMode)
+  );
+}
+
+function toRawSchemaBlock(
+  schema: ExtractedSchema,
+  index: number,
+  sourceMode?: ScrapeSourceMode
+): RawSchemaBlock {
   const treeValue = schema.parseError
     ? { parseError: schema.parseError, raw: schema.raw }
     : schema.data;
 
   return {
     source: schema.source,
+    sourceMode,
     raw: schema.raw,
     data: schema.parseError ? undefined : schema.data,
     parseError: schema.parseError,
@@ -48,4 +132,38 @@ function toRawSchemaBlock(schema: ExtractedSchema, index: number): RawSchemaBloc
     syntaxError: schema.syntaxError,
     tree: buildSourceTree(treeValue, schema.source, index + 1),
   };
+}
+
+function filterRenderedDuplicates(
+  staticSchemas: RawSchemaBlock[],
+  renderedSchemas: RawSchemaBlock[]
+): RawSchemaBlock[] {
+  const staticFingerprints = new Set(staticSchemas.map(schemaFingerprint));
+  return renderedSchemas.filter(schema => !staticFingerprints.has(schemaFingerprint(schema)));
+}
+
+function schemaFingerprint(schema: RawSchemaBlock): string {
+  return `${schema.source}:${stableStringify(schema.data ?? schema.raw ?? schema.parseError ?? null)}`;
+}
+
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
+
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record)
+      .sort()
+      .map(key => `${JSON.stringify(key)}:${stableStringify(record[key])}`)
+      .join(',')}}`;
+  }
+
+  return JSON.stringify(value) ?? 'undefined';
+}
+
+function stripJsonLdScriptWrapper(value: string): string {
+  const match = value.match(
+    /<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/i
+  );
+
+  return (match ? match[1] : value).trim();
 }

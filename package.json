@@ -14,7 +14,8 @@
   "dependencies": {
     "chalk": "^4.1.2",
     "cheerio": "^1.0.0",
-    "json5": "^2.2.3"
+    "json5": "^2.2.3",
+    "puppeteer": "^25.1.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

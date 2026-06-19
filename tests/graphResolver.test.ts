@@ -148,6 +148,78 @@ describe('graph resolver', () => {
     ]);
   });
 
+  it('marks duplicate static and rendered entities as merged', () => {
+    expect(consolidateGraphEntities([
+      {
+        '@type': 'Product',
+        '@id': '#product',
+        name: 'Static Name',
+        _meta: {
+          sourceMode: 'static',
+          extractionChannel: 'json-ld',
+        },
+      },
+      {
+        '@type': 'Product',
+        '@id': '#product',
+        aggregateRating: {
+          '@type': 'AggregateRating',
+          ratingValue: '4.8',
+        },
+        _meta: {
+          sourceMode: 'rendered',
+          extractionChannel: 'json-ld',
+        },
+      },
+    ])).toEqual([
+      {
+        '@type': 'Product',
+        '@id': '#product',
+        name: 'Static Name',
+        aggregateRating: {
+          '@type': 'AggregateRating',
+          ratingValue: '4.8',
+        },
+        _meta: {
+          sourceMode: 'merged',
+          extractionChannel: 'json-ld',
+        },
+      },
+    ]);
+  });
+
+  it('does not merge full page-url entities into the canonical product', () => {
+    const resolved = resolveGraph([
+      {
+        '@type': 'Product',
+        '@id': '#product',
+        url: 'https://example.com/product',
+        name: 'Example Product',
+      },
+      {
+        '@type': 'VideoObject',
+        url: 'https://example.com/product',
+        name: 'Example Product Video',
+        contentUrl: 'https://cdn.example.com/video.mp4',
+      },
+    ]);
+
+    expect(resolved).toEqual([
+      {
+        '@type': 'Product',
+        '@id': '#product',
+        url: 'https://example.com/product',
+        name: 'Example Product',
+      },
+      {
+        '@type': 'VideoObject',
+        url: 'https://example.com/product',
+        name: 'Example Product Video',
+        contentUrl: 'https://cdn.example.com/video.mp4',
+      },
+    ]);
+  });
+
   it('keeps only roots not already linked inside the selected master tree', () => {
     const resolvedEntities = [
       {
