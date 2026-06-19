@@ -43,6 +43,7 @@ interface ResolvedAuditReport {
   url: string;
   finalUrl?: string;
   generatedAt: string;
+  rawEntitiesForGraphResolver: GraphEntity[];
   entitiesForGraphResolver: GraphEntity[];
   resolvedEntities: GraphEntity[];
   scrapeWarnings: string[];
@@ -263,8 +264,9 @@ function hasJsonLdInput(options: CliOptions): boolean {
 
 function buildResolvedAuditReport(extractedData: ScrapeResult): ResolvedAuditReport {
   const graphOutput = processRawPayload(extractedData);
+  const rawEntities = graphOutput.entitiesForGraphResolver as GraphEntity[];
   const entities = consolidateGraphEntities(
-    graphOutput.entitiesForGraphResolver as GraphEntity[]
+    rawEntities
   );
   const entityMap = buildGraphEntityMap(entities);
   const resolvedTreeArray = resolveGraph(entities, entityMap);
@@ -284,6 +286,7 @@ function buildResolvedAuditReport(extractedData: ScrapeResult): ResolvedAuditRep
     url: extractedData.url,
     finalUrl: extractedData.finalUrl,
     generatedAt: new Date().toISOString(),
+    rawEntitiesForGraphResolver: rawEntities,
     entitiesForGraphResolver: entities,
     resolvedEntities: resolvedTreeArray,
     scrapeWarnings: extractedData.warnings ?? [],
@@ -350,6 +353,25 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
     h1, h2, h3 { margin: 0 0 12px; }
     .meta { color: var(--muted); margin: 4px 0; }
     .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin: 20px 0; }
+    .report-tabs {
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      gap: 6px;
+      margin: 24px 0 18px;
+    }
+    .report-tab {
+      border-bottom-left-radius: 0;
+      border-bottom-right-radius: 0;
+      font-weight: 700;
+      margin-bottom: -1px;
+    }
+    .report-tab.active {
+      border-color: var(--accent);
+      border-bottom-color: var(--panel);
+      color: var(--accent);
+    }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
     button {
       border: 1px solid var(--border);
       background: var(--panel);
@@ -495,12 +517,34 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
       gap: 6px;
       width: auto;
     }
+    .map-toolbar {
+      align-items: center;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 14px 0;
+    }
+    .map-mode.active {
+      border-color: var(--accent);
+      color: var(--accent);
+      font-weight: 800;
+    }
+    .zoom-label {
+      color: var(--muted);
+      font-family: Consolas, "SFMono-Regular", monospace;
+      font-size: 0.9rem;
+      min-width: 58px;
+      text-align: center;
+    }
     .schema-link-map {
       background: #fbfdff;
       border: 1px solid var(--border);
       border-radius: 8px;
-      min-height: 520px;
-      overflow: auto;
+      display: flex;
+      flex-direction: column;
+      height: 72vh;
+      min-height: 560px;
+      overflow: hidden;
       position: relative;
     }
     .schema-link-map::before {
@@ -515,10 +559,23 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
     }
     .schema-link-map svg {
       display: block;
-      min-height: 520px;
+      height: auto;
       position: relative;
-      width: 100%;
+      width: auto;
       z-index: 1;
+    }
+    .schema-link-map-viewport {
+      flex: 1;
+      height: 100%;
+      overflow: auto;
+      position: relative;
+      z-index: 1;
+    }
+    .schema-link-map-canvas {
+      min-height: 100%;
+      min-width: 100%;
+      transform-origin: 0 0;
+      width: max-content;
     }
     .schema-link-map .map-edge {
       stroke: #8ec5e8;
@@ -605,63 +662,86 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
   <p class="meta"><strong>Final URL:</strong> ${escapeHtml(report.finalUrl ?? report.url)}</p>
   <p class="meta"><strong>Generated:</strong> ${escapeHtml(report.generatedAt)}</p>
 
-  <div class="toolbar">
-    <button type="button" id="expand-all">Expand all</button>
-    <button type="button" id="collapse-all">Collapse all</button>
+  <nav class="report-tabs" role="tablist" aria-label="Report views">
+    <button type="button" class="report-tab active" data-tab="audit" role="tab" aria-selected="true">Audit Tree</button>
+    <button type="button" class="report-tab" data-tab="map" role="tab" aria-selected="false">Relationship Map</button>
+  </nav>
+
+  <div id="tab-panel-audit" class="tab-panel active" role="tabpanel">
+    <div class="toolbar">
+      <button type="button" id="expand-all">Expand all</button>
+      <button type="button" id="collapse-all">Collapse all</button>
+    </div>
+
+    <div id="diagnostic-panel"></div>
+    <div id="scrape-warning-panel"></div>
+    <div id="quality-panel"></div>
+
+    <section>
+      <h2>Primary Semantic Entity Tree</h2>
+      <div id="primary-tree-root"></div>
+    </section>
+
+    <section>
+      <h2>Unlinked Root Schemas</h2>
+      <div id="orphan-tree-root"></div>
+    </section>
+
+    <section>
+      <h2>Complete Resolved Graph Forest</h2>
+      <p class="meta">Every top-level entity found on the page, with known in-page references expanded.</p>
+      <div id="resolved-forest-root"></div>
+    </section>
+
+    <section>
+      <h2>Raw Extracted Schema Array View</h2>
+      <p class="meta">Browser-like indexed view of every schema entity before dedupe and graph consolidation.</p>
+      <div id="visual-tree-root" class="visual-connected-tree"></div>
+    </section>
+
+    <section>
+      <h2>Syntax Errors</h2>
+      <pre>${escapeHtml(JSON.stringify(report.detectedSyntaxErrors, null, 2))}</pre>
+    </section>
+
+    <section>
+      <h2>Graph Health</h2>
+      <p class="status ${report.health?.status === 'success' ? 'ok' : 'warn'}">${escapeHtml(report.health?.status ?? 'not-run')}</p>
+      <pre>${escapeHtml(JSON.stringify(report.health, null, 2))}</pre>
+    </section>
+
+    <section>
+      <h2>Graph-Ready Entities</h2>
+      <details>
+        <summary>Show consolidated graph-ready JSON</summary>
+        <pre>${escapeHtml(JSON.stringify(report.entitiesForGraphResolver, null, 2))}</pre>
+      </details>
+      <details>
+        <summary>Show raw pre-dedupe graph-ready JSON</summary>
+        <pre>${escapeHtml(JSON.stringify(report.rawEntitiesForGraphResolver, null, 2))}</pre>
+      </details>
+    </section>
   </div>
 
-  <div id="diagnostic-panel"></div>
-  <div id="scrape-warning-panel"></div>
-  <div id="quality-panel"></div>
-
-  <section>
-    <h2>Schema Relationship Map</h2>
-    <p class="meta">Node-link visualization of schema objects and the properties connecting them.</p>
-    <div id="schema-link-map-root" class="schema-link-map"></div>
-  </section>
-
-  <section>
-    <h2>Primary Semantic Entity Tree</h2>
-    <div id="primary-tree-root"></div>
-  </section>
-
-  <section>
-    <h2>Unlinked Root Schemas</h2>
-    <div id="orphan-tree-root"></div>
-  </section>
-
-  <section>
-    <h2>Complete Resolved Graph Forest</h2>
-    <p class="meta">Every top-level entity found on the page, with known in-page references expanded.</p>
-    <div id="resolved-forest-root"></div>
-  </section>
-
-  <section>
-    <h2>Graph Structural Tree View</h2>
-    <p class="meta">Alternative visualization mapping nested properties with parent-child connection lines.</p>
-    <div id="visual-tree-root" class="visual-connected-tree"></div>
-  </section>
-
-  <section>
-    <h2>Syntax Errors</h2>
-    <pre>${escapeHtml(JSON.stringify(report.detectedSyntaxErrors, null, 2))}</pre>
-  </section>
-
-  <section>
-    <h2>Graph Health</h2>
-    <p class="status ${report.health?.status === 'success' ? 'ok' : 'warn'}">${escapeHtml(report.health?.status ?? 'not-run')}</p>
-    <pre>${escapeHtml(JSON.stringify(report.health, null, 2))}</pre>
-  </section>
-
-  <section>
-    <h2>Graph-Ready Entities</h2>
-    <details>
-      <summary>Show raw graph-ready JSON</summary>
-      <pre>${escapeHtml(JSON.stringify(report.entitiesForGraphResolver, null, 2))}</pre>
-    </details>
-  </section>
+  <div id="tab-panel-map" class="tab-panel" role="tabpanel">
+    <section>
+      <h2>Schema Relationship Map</h2>
+      <p class="meta">Node-link visualization of schema objects and the properties connecting them.</p>
+      <div class="map-toolbar">
+        <button type="button" id="schema-map-full" class="map-mode active">Full graph</button>
+        <button type="button" id="schema-map-primary" class="map-mode">Primary graph</button>
+        <button type="button" id="schema-map-zoom-out">Zoom out</button>
+        <span id="schema-map-zoom-label" class="zoom-label">100%</span>
+        <button type="button" id="schema-map-zoom-in">Zoom in</button>
+        <button type="button" id="schema-map-zoom-reset">Reset</button>
+      </div>
+      <div id="schema-link-map-root" class="schema-link-map"></div>
+    </section>
+  </div>
   <script>
     const reportData = ${escapeScriptJson(report)};
+    const mapZoomState = { value: 1 };
+    const mapViewState = { mode: 'full' };
 
     function appendText(parent, className, text) {
       const span = document.createElement('span');
@@ -716,7 +796,7 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
       return li;
     }
 
-    function createPropertyRow(key, value, parentMeta = null) {
+    function createPropertyRow(key, value, parentMeta = null, collapsed = false) {
       const li = document.createElement('li');
       li.className = 'tree-node';
       const currentMeta = metaForValue(value, parentMeta);
@@ -735,13 +815,13 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
       }
 
       const toggle = document.createElement('span');
-      toggle.className = 'node-toggle';
+      toggle.className = collapsed ? 'node-toggle collapsed' : 'node-toggle';
       appendText(toggle, keyClassName(key), key);
       appendTypeBadge(toggle, value);
       appendSourceBadge(toggle, currentMeta);
       li.appendChild(toggle);
       const childContainer = document.createElement('div');
-      childContainer.className = 'nested-container';
+      childContainer.className = collapsed ? 'nested-container hidden' : 'nested-container';
       li.appendChild(childContainer);
 
       toggle.addEventListener('click', event => {
@@ -783,6 +863,30 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
       const rootMeta = rootEntity && rootEntity._meta ? rootEntity._meta : null;
       visibleObjectKeys(rootEntity).forEach(key => {
         ul.appendChild(createPropertyRow(key, rootEntity[key], rootMeta));
+      });
+      container.appendChild(ul);
+    }
+
+    function renderRawSchemaArray(values, container) {
+      container.textContent = '';
+      if (!values || values.length === 0) {
+        const p = document.createElement('p');
+        p.className = 'meta';
+        p.textContent = 'No raw schema entities present.';
+        container.appendChild(p);
+        return;
+      }
+
+      const summary = document.createElement('p');
+      summary.className = 'meta';
+      summary.textContent = 'Array(' + values.length + ')';
+      container.appendChild(summary);
+
+      const ul = document.createElement('ul');
+      ul.className = 'schema-tree';
+      values.forEach((entity, index) => {
+        const meta = entity && entity._meta ? entity._meta : null;
+        ul.appendChild(createPropertyRow('[' + index + ']', entity, meta, true));
       });
       container.appendChild(ul);
     }
@@ -831,9 +935,10 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
       });
     }
 
-    function renderSchemaRelationshipMap(rootEntity, container) {
+    function renderSchemaRelationshipMap(rootInput, container, scopeLabel) {
       container.textContent = '';
-      if (!rootEntity || typeof rootEntity !== 'object') {
+      const roots = normalizeRelationshipRoots(rootInput);
+      if (roots.length === 0) {
         const p = document.createElement('p');
         p.className = 'map-empty';
         p.textContent = 'No schema relationship data present.';
@@ -841,7 +946,7 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
         return;
       }
 
-      const graph = buildRelationshipGraph(rootEntity, 90);
+      const graph = buildRelationshipGraph(roots, 180);
       if (graph.nodes.length === 0) {
         const p = document.createElement('p');
         p.className = 'map-empty';
@@ -853,12 +958,32 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
       layoutRelationshipGraph(graph);
       const summary = document.createElement('p');
       summary.className = 'schema-map-summary';
-      summary.textContent = graph.nodes.length + ' nodes / ' + graph.links.length + ' links';
+      summary.textContent = scopeLabel + ': ' + graph.nodes.length + ' nodes / ' + graph.links.length + ' links';
       container.appendChild(summary);
-      drawRelationshipGraph(graph, container);
+
+      const viewport = document.createElement('div');
+      viewport.className = 'schema-link-map-viewport';
+      const canvas = document.createElement('div');
+      canvas.id = 'schema-link-map-zoom-layer';
+      canvas.className = 'schema-link-map-canvas';
+      canvas.dataset.baseWidth = String(graph.width);
+      canvas.dataset.baseHeight = String(graph.height);
+      viewport.appendChild(canvas);
+      container.appendChild(viewport);
+
+      drawRelationshipGraph(graph, canvas);
+      setSchemaMapZoom(1);
     }
 
-    function buildRelationshipGraph(rootEntity, maxNodes) {
+    function normalizeRelationshipRoots(rootInput) {
+      if (Array.isArray(rootInput)) {
+        return rootInput.filter(value => value && typeof value === 'object' && !Array.isArray(value));
+      }
+
+      return rootInput && typeof rootInput === 'object' ? [rootInput] : [];
+    }
+
+    function buildRelationshipGraph(rootEntities, maxNodes) {
       const nodes = [];
       const links = [];
       const seen = new WeakMap();
@@ -878,6 +1003,20 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
 
         nodes.push(node);
         seen.set(value, node);
+        return node;
+      }
+
+      function addVirtualForestNode() {
+        const node = {
+          id: 'node-' + nodes.length,
+          depth: 0,
+          label: 'Resolved Schema Forest',
+          type: 'Graph',
+          color: schemaMapColor('Graph'),
+          x: 0,
+          y: 0,
+        };
+        nodes.push(node);
         return node;
       }
 
@@ -908,7 +1047,22 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
         return parentNode;
       }
 
-      visit(rootEntity, 0);
+      if (rootEntities.length === 1) {
+        visit(rootEntities[0], 0);
+      } else {
+        const forestNode = addVirtualForestNode();
+        rootEntities.forEach((rootEntity, index) => {
+          if (nodes.length >= maxNodes) return;
+          const rootNode = visit(rootEntity, 1);
+          if (rootNode) {
+            links.push({
+              source: forestNode,
+              target: rootNode,
+              label: 'root ' + (index + 1),
+            });
+          }
+        });
+      }
 
       return {
         nodes,
@@ -959,6 +1113,7 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
     }
 
     function schemaMapColor(type) {
+      if (type === 'Graph') return '#334155';
       if (type === 'Product') return '#d78bd7';
       if (type === 'Offer') return '#ff9b9b';
       if (type === 'Organization') return '#8d5a4b';
@@ -1017,6 +1172,8 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
     function drawRelationshipGraph(graph, container) {
       const svg = createSvgElement('svg');
       svg.setAttribute('viewBox', '0 0 ' + graph.width + ' ' + graph.height);
+      svg.setAttribute('width', graph.width);
+      svg.setAttribute('height', graph.height);
       svg.setAttribute('role', 'img');
       svg.setAttribute('aria-label', 'Schema relationship node map');
 
@@ -1242,6 +1399,59 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
       container.appendChild(warningCard);
     }
 
+    function setActiveReportTab(tabName) {
+      document.querySelectorAll('.report-tab').forEach(tab => {
+        const isActive = tab.dataset.tab === tabName;
+        tab.classList.toggle('active', isActive);
+        tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
+      });
+
+      document.querySelectorAll('.tab-panel').forEach(panel => {
+        panel.classList.toggle('active', panel.id === 'tab-panel-' + tabName);
+      });
+    }
+
+    function setSchemaMapZoom(value) {
+      const nextZoom = Math.min(2.5, Math.max(0.35, value));
+      const zoomLayer = document.getElementById('schema-link-map-zoom-layer');
+      const zoomLabel = document.getElementById('schema-map-zoom-label');
+      mapZoomState.value = nextZoom;
+
+      if (zoomLayer) {
+        zoomLayer.style.transform = 'scale(' + nextZoom + ')';
+        const baseWidth = Number(zoomLayer.dataset.baseWidth || 0);
+        const baseHeight = Number(zoomLayer.dataset.baseHeight || 0);
+        if (baseWidth > 0) zoomLayer.style.width = Math.ceil(baseWidth * nextZoom) + 'px';
+        if (baseHeight > 0) zoomLayer.style.height = Math.ceil(baseHeight * nextZoom) + 'px';
+      }
+
+      if (zoomLabel) {
+        zoomLabel.textContent = Math.round(nextZoom * 100) + '%';
+      }
+    }
+
+    function adjustSchemaMapZoom(delta) {
+      setSchemaMapZoom(mapZoomState.value + delta);
+    }
+
+    function renderCurrentSchemaMap() {
+      const container = document.getElementById('schema-link-map-root');
+      const isPrimary = mapViewState.mode === 'primary';
+      renderSchemaRelationshipMap(
+        isPrimary ? reportData.primaryRoot : reportData.resolvedEntities,
+        container,
+        isPrimary ? 'Primary graph' : 'Full graph'
+      );
+    }
+
+    function setSchemaMapMode(mode) {
+      mapViewState.mode = mode;
+      document.querySelectorAll('.map-mode').forEach(button => {
+        button.classList.toggle('active', button.id === 'schema-map-' + mode);
+      });
+      renderCurrentSchemaMap();
+    }
+
     function setCollapsed(collapsed) {
       document.querySelectorAll('.node-toggle').forEach(toggle => {
         toggle.classList.toggle('collapsed', collapsed);
@@ -1257,10 +1467,18 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
     renderEntityTree(reportData.primaryRoot, document.getElementById('primary-tree-root'));
     renderOrphans(reportData.orphanRoots, document.getElementById('orphan-tree-root'));
     renderResolvedForest(reportData.resolvedEntities, document.getElementById('resolved-forest-root'));
-    renderSchemaRelationshipMap(reportData.primaryRoot, document.getElementById('schema-link-map-root'));
-    renderResolvedForest(reportData.resolvedEntities, document.getElementById('visual-tree-root'));
+    renderCurrentSchemaMap();
+    renderRawSchemaArray(reportData.rawEntitiesForGraphResolver, document.getElementById('visual-tree-root'));
+    document.querySelectorAll('.report-tab').forEach(tab => {
+      tab.addEventListener('click', () => setActiveReportTab(tab.dataset.tab));
+    });
     document.getElementById('expand-all').addEventListener('click', () => setCollapsed(false));
     document.getElementById('collapse-all').addEventListener('click', () => setCollapsed(true));
+    document.getElementById('schema-map-full').addEventListener('click', () => setSchemaMapMode('full'));
+    document.getElementById('schema-map-primary').addEventListener('click', () => setSchemaMapMode('primary'));
+    document.getElementById('schema-map-zoom-out').addEventListener('click', () => adjustSchemaMapZoom(-0.15));
+    document.getElementById('schema-map-zoom-in').addEventListener('click', () => adjustSchemaMapZoom(0.15));
+    document.getElementById('schema-map-zoom-reset').addEventListener('click', () => setSchemaMapZoom(1));
   </script>
 </body>
 </html>`;

@@ -46,7 +46,7 @@ export function consolidateGraphEntities(entities: GraphEntity[]): GraphEntity[]
   const namelessEntities: GraphEntity[] = [];
 
   for (const entity of entities) {
-    const id = stringValue(entity['@id']);
+    const id = consolidationIdentity(entity);
 
     if (!id) {
       namelessEntities.push(cloneValue(entity));
@@ -181,6 +181,51 @@ function identityKeys(entity: GraphEntity): string[] {
     stringValue(entity.url),
     ...arrayStringValues(entity.sameAs),
   ].filter((value): value is string => typeof value === 'string' && value.length > 0);
+}
+
+function consolidationIdentity(entity: GraphEntity): string | undefined {
+  const id = stringValue(entity['@id']);
+  if (id) return `@id:${normalizeIdentity(id)}`;
+
+  const gtin = productIdentifier(entity, [
+    'gtin',
+    'gtin8',
+    'gtin12',
+    'gtin13',
+    'gtin14',
+  ]);
+  if (gtin) return `gtin:${gtin}`;
+
+  const sku = productIdentifier(entity, ['sku']);
+  if (sku) return `sku:${sku}`;
+
+  const productUrl = productCanonicalUrl(entity);
+  if (productUrl) return `product-url:${normalizeIdentity(productUrl)}`;
+
+  return undefined;
+}
+
+function productIdentifier(
+  entity: GraphEntity,
+  keys: string[]
+): string | undefined {
+  if (!isProductLikeEntity(entity)) return undefined;
+
+  for (const key of keys) {
+    const value = stringValue(entity[key]);
+    if (value) return value.toLowerCase();
+  }
+
+  return undefined;
+}
+
+function productCanonicalUrl(entity: GraphEntity): string | undefined {
+  if (!isProductLikeEntity(entity)) return undefined;
+  return stringValue(entity.url);
+}
+
+function isProductLikeEntity(entity: GraphEntity): boolean {
+  return entityHasType(entity, 'Product') || entityHasType(entity, 'ProductGroup');
 }
 
 function collectLinkedIdentities(value: unknown): Set<string> {

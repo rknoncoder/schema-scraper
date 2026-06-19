@@ -161,6 +161,95 @@ describe('graph resolver', () => {
     ]);
   });
 
+  it('does not merge entities only because they share the same @type', () => {
+    expect(consolidateGraphEntities([
+      {
+        '@type': 'Product',
+        name: 'First Product',
+      },
+      {
+        '@type': 'Product',
+        name: 'Second Product',
+      },
+    ])).toEqual([
+      {
+        '@type': 'Product',
+        name: 'First Product',
+      },
+      {
+        '@type': 'Product',
+        name: 'Second Product',
+      },
+    ]);
+  });
+
+  it('consolidates products with matching definitive identifiers', () => {
+    expect(consolidateGraphEntities([
+      {
+        '@type': 'Product',
+        name: 'Static Product',
+        sku: 'SKU-123',
+      },
+      {
+        '@type': 'Product',
+        sku: 'sku-123',
+        aggregateRating: {
+          '@type': 'AggregateRating',
+          ratingValue: '4.9',
+        },
+      },
+      {
+        '@type': 'Product',
+        name: 'GTIN Product',
+        gtin: '00012345678905',
+      },
+      {
+        '@type': 'Product',
+        gtin14: '00012345678905',
+        image: 'gtin-product.jpg',
+      },
+      {
+        '@type': 'Product',
+        name: 'URL Product',
+        url: 'https://example.com/products/widget/',
+      },
+      {
+        '@type': 'Product',
+        url: 'https://example.com/products/widget',
+        offers: {
+          '@type': 'Offer',
+          price: '25',
+        },
+      },
+    ])).toEqual([
+      {
+        '@type': 'Product',
+        name: 'Static Product',
+        sku: 'SKU-123',
+        aggregateRating: {
+          '@type': 'AggregateRating',
+          ratingValue: '4.9',
+        },
+      },
+      {
+        '@type': 'Product',
+        name: 'GTIN Product',
+        gtin: '00012345678905',
+        gtin14: '00012345678905',
+        image: 'gtin-product.jpg',
+      },
+      {
+        '@type': 'Product',
+        name: 'URL Product',
+        url: 'https://example.com/products/widget/',
+        offers: {
+          '@type': 'Offer',
+          price: '25',
+        },
+      },
+    ]);
+  });
+
   it('marks duplicate static and rendered entities as merged', () => {
     expect(consolidateGraphEntities([
       {
