@@ -547,6 +547,11 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
       overflow: hidden;
       position: relative;
     }
+    .schema-link-map.dragging,
+    .schema-link-map.dragging * {
+      cursor: grabbing;
+      user-select: none;
+    }
     .schema-link-map::before {
       bottom: 18px;
       color: rgba(255, 153, 124, 0.35);
@@ -569,26 +574,45 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
       height: 100%;
       overflow: auto;
       position: relative;
+      cursor: grab;
       z-index: 1;
     }
     .schema-link-map-canvas {
       min-height: 100%;
       min-width: 100%;
       transform-origin: 0 0;
+      transition: transform 120ms ease-out;
       width: max-content;
     }
     .schema-link-map .map-edge {
       stroke: #8ec5e8;
       stroke-width: 1.6;
+      stroke-dasharray: 420;
+      stroke-dashoffset: 420;
+      animation: draw-map-edge 520ms ease-out forwards;
     }
     .schema-link-map .map-edge-label {
       fill: #64748b;
       font-family: Consolas, "SFMono-Regular", monospace;
       font-size: 12px;
+      opacity: 0;
+      animation: fade-map-label 260ms ease-out 220ms forwards;
+      transition: font-size 120ms ease-out;
+    }
+    .schema-link-map .map-node {
+      cursor: pointer;
+      opacity: 0;
+      animation: pop-map-node 260ms ease-out forwards;
     }
     .schema-link-map .map-node circle {
       stroke: rgba(255,255,255,0.95);
       stroke-width: 3;
+      transition: filter 140ms ease-out, stroke-width 140ms ease-out;
+    }
+    .schema-link-map .map-node:hover circle,
+    .schema-link-map .map-node.selected circle {
+      filter: drop-shadow(0 4px 8px rgba(15,23,42,0.22));
+      stroke-width: 5;
     }
     .schema-link-map .map-node text {
       fill: #0f172a;
@@ -597,6 +621,40 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
       stroke: rgba(255,255,255,0.9);
       stroke-width: 4px;
       stroke-linejoin: round;
+      transition: font-size 120ms ease-out;
+    }
+    .schema-link-map.zoomed-in .map-edge-label {
+      font-size: 14px;
+    }
+    .schema-link-map.zoomed-in .map-node text {
+      font-size: 16px;
+    }
+    .schema-map-detail {
+      background: #f8fafc;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-top: 14px;
+      padding: 14px;
+    }
+    .schema-map-detail.hidden { display: none; }
+    .schema-map-detail h3 {
+      color: var(--accent);
+      margin-bottom: 8px;
+    }
+    .schema-map-detail dl {
+      display: grid;
+      gap: 6px 12px;
+      grid-template-columns: max-content minmax(0, 1fr);
+      margin: 0;
+    }
+    .schema-map-detail dt {
+      color: var(--muted);
+      font-weight: 700;
+    }
+    .schema-map-detail dd {
+      font-family: Consolas, "SFMono-Regular", monospace;
+      margin: 0;
+      overflow-wrap: anywhere;
     }
     .schema-link-map .map-empty {
       color: var(--muted);
@@ -608,6 +666,16 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
       padding: 12px 14px 0;
       position: relative;
       z-index: 1;
+    }
+    @keyframes draw-map-edge {
+      to { stroke-dashoffset: 0; }
+    }
+    @keyframes fade-map-label {
+      to { opacity: 1; }
+    }
+    @keyframes pop-map-node {
+      from { opacity: 0; }
+      to { opacity: 1; }
     }
     pre {
       overflow: auto;
@@ -663,41 +731,15 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
   <p class="meta"><strong>Generated:</strong> ${escapeHtml(report.generatedAt)}</p>
 
   <nav class="report-tabs" role="tablist" aria-label="Report views">
-    <button type="button" class="report-tab active" data-tab="audit" role="tab" aria-selected="true">Audit Tree</button>
+    <button type="button" class="report-tab active" data-tab="health" role="tab" aria-selected="true">Health Diagnostics</button>
+    <button type="button" class="report-tab" data-tab="semantic" role="tab" aria-selected="false">Semantic Graph</button>
     <button type="button" class="report-tab" data-tab="map" role="tab" aria-selected="false">Relationship Map</button>
   </nav>
 
-  <div id="tab-panel-audit" class="tab-panel active" role="tabpanel">
-    <div class="toolbar">
-      <button type="button" id="expand-all">Expand all</button>
-      <button type="button" id="collapse-all">Collapse all</button>
-    </div>
-
+  <div id="tab-panel-health" class="tab-panel active" role="tabpanel">
     <div id="diagnostic-panel"></div>
     <div id="scrape-warning-panel"></div>
     <div id="quality-panel"></div>
-
-    <section>
-      <h2>Primary Semantic Entity Tree</h2>
-      <div id="primary-tree-root"></div>
-    </section>
-
-    <section>
-      <h2>Unlinked Root Schemas</h2>
-      <div id="orphan-tree-root"></div>
-    </section>
-
-    <section>
-      <h2>Complete Resolved Graph Forest</h2>
-      <p class="meta">Every top-level entity found on the page, with known in-page references expanded.</p>
-      <div id="resolved-forest-root"></div>
-    </section>
-
-    <section>
-      <h2>Raw Extracted Schema Array View</h2>
-      <p class="meta">Browser-like indexed view of every schema entity before dedupe and graph consolidation.</p>
-      <div id="visual-tree-root" class="visual-connected-tree"></div>
-    </section>
 
     <section>
       <h2>Syntax Errors</h2>
@@ -708,6 +750,35 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
       <h2>Graph Health</h2>
       <p class="status ${report.health?.status === 'success' ? 'ok' : 'warn'}">${escapeHtml(report.health?.status ?? 'not-run')}</p>
       <pre>${escapeHtml(JSON.stringify(report.health, null, 2))}</pre>
+    </section>
+  </div>
+
+  <div id="tab-panel-semantic" class="tab-panel" role="tabpanel">
+    <div class="toolbar">
+      <button type="button" id="expand-all">Expand all</button>
+      <button type="button" id="collapse-all">Collapse all</button>
+    </div>
+
+    <section>
+      <h2>Primary Semantic Entity Tree</h2>
+      <div id="primary-tree-root" class="visual-connected-tree"></div>
+    </section>
+
+    <section>
+      <h2>Unlinked Root Schemas</h2>
+      <div id="orphan-tree-root" class="visual-connected-tree"></div>
+    </section>
+
+    <section>
+      <h2>Complete Resolved Graph Forest</h2>
+      <p class="meta">Every top-level entity found on the page, with known in-page references expanded.</p>
+      <div id="resolved-forest-root" class="visual-connected-tree"></div>
+    </section>
+
+    <section>
+      <h2>Raw Extracted Schema Array View</h2>
+      <p class="meta">Browser-like indexed view of every schema entity before dedupe and graph consolidation.</p>
+      <div id="visual-tree-root" class="visual-connected-tree"></div>
     </section>
 
     <section>
@@ -736,6 +807,7 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
         <button type="button" id="schema-map-zoom-reset">Reset</button>
       </div>
       <div id="schema-link-map-root" class="schema-link-map"></div>
+      <div id="schema-map-detail" class="schema-map-detail hidden"></div>
     </section>
   </div>
   <script>
@@ -937,6 +1009,7 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
 
     function renderSchemaRelationshipMap(rootInput, container, scopeLabel) {
       container.textContent = '';
+      clearSchemaMapNodeDetail();
       const roots = normalizeRelationshipRoots(rootInput);
       if (roots.length === 0) {
         const p = document.createElement('p');
@@ -973,6 +1046,7 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
 
       drawRelationshipGraph(graph, canvas);
       setSchemaMapZoom(1);
+      bindSchemaMapGestures(viewport);
     }
 
     function normalizeRelationshipRoots(rootInput) {
@@ -997,6 +1071,7 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
           label: schemaMapNodeLabel(value),
           type: schemaMapType(value),
           color: schemaMapColor(schemaMapType(value)),
+          details: schemaMapNodeDetails(value),
           x: 0,
           y: 0,
         };
@@ -1013,6 +1088,9 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
           label: 'Resolved Schema Forest',
           type: 'Graph',
           color: schemaMapColor('Graph'),
+          details: [
+            { key: 'nodes', value: String(rootEntities.length) },
+          ],
           x: 0,
           y: 0,
         };
@@ -1110,6 +1188,32 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
         : undefined;
       const suffix = name || price || rating || stringTail(value['@id']) || stringTail(value.url);
       return suffix ? type + ': ' + truncateText(suffix, 42) : type;
+    }
+
+    function schemaMapNodeDetails(value) {
+      if (!value || typeof value !== 'object') return [];
+      const details = [];
+      addSchemaMapDetail(details, 'type', schemaMapType(value));
+      addSchemaMapDetail(details, 'name', value.name);
+      addSchemaMapDetail(details, '@id', value['@id']);
+      addSchemaMapDetail(details, 'url', value.url);
+      addSchemaMapDetail(details, 'sku', value.sku);
+      addSchemaMapDetail(details, 'gtin', value.gtin || value.gtin8 || value.gtin12 || value.gtin13 || value.gtin14);
+
+      if (value._meta) {
+        addSchemaMapDetail(details, 'source', value._meta.sourceMode);
+        addSchemaMapDetail(details, 'channel', value._meta.extractionChannel);
+      }
+
+      return details;
+    }
+
+    function addSchemaMapDetail(details, key, value) {
+      if (value === undefined || value === null || value === '') return;
+      details.push({
+        key,
+        value: Array.isArray(value) ? value.join(', ') : String(value),
+      });
     }
 
     function schemaMapColor(type) {
@@ -1222,6 +1326,10 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
       const group = createSvgElement('g');
       group.setAttribute('class', 'map-node');
       group.setAttribute('transform', 'translate(' + node.x + ' ' + node.y + ')');
+      group.setAttribute('tabindex', '0');
+      group.setAttribute('role', 'button');
+      group.setAttribute('aria-label', node.label);
+      group.style.animationDelay = Math.min(node.depth * 45, 360) + 'ms';
 
       const circle = createSvgElement('circle');
       circle.setAttribute('r', node.depth === 0 ? '12' : '10');
@@ -1238,7 +1346,54 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
       text.textContent = node.label;
       group.appendChild(text);
 
+      group.addEventListener('click', event => {
+        event.stopPropagation();
+        renderSchemaMapNodeDetail(node, group);
+      });
+
+      group.addEventListener('keydown', event => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        renderSchemaMapNodeDetail(node, group);
+      });
+
       svg.appendChild(group);
+    }
+
+    function renderSchemaMapNodeDetail(node, selectedGroup) {
+      document.querySelectorAll('.map-node.selected').forEach(element => {
+        element.classList.remove('selected');
+      });
+      selectedGroup.classList.add('selected');
+
+      const panel = document.getElementById('schema-map-detail');
+      if (!panel) return;
+
+      panel.textContent = '';
+      panel.classList.remove('hidden');
+
+      const title = document.createElement('h3');
+      title.textContent = node.label;
+      panel.appendChild(title);
+
+      const list = document.createElement('dl');
+      (node.details || []).forEach(detail => {
+        const term = document.createElement('dt');
+        term.textContent = detail.key;
+        const description = document.createElement('dd');
+        description.textContent = detail.value;
+        list.appendChild(term);
+        list.appendChild(description);
+      });
+
+      panel.appendChild(list);
+    }
+
+    function clearSchemaMapNodeDetail() {
+      const panel = document.getElementById('schema-map-detail');
+      if (!panel) return;
+      panel.textContent = '';
+      panel.classList.add('hidden');
     }
 
     function shortenLine(x1, y1, x2, y2, padding) {
@@ -1411,10 +1566,12 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
       });
     }
 
-    function setSchemaMapZoom(value) {
+    function setSchemaMapZoom(value, focusPoint) {
       const nextZoom = Math.min(2.5, Math.max(0.35, value));
       const zoomLayer = document.getElementById('schema-link-map-zoom-layer');
       const zoomLabel = document.getElementById('schema-map-zoom-label');
+      const viewport = document.querySelector('.schema-link-map-viewport');
+      const mapRoot = document.getElementById('schema-link-map-root');
       mapZoomState.value = nextZoom;
 
       if (zoomLayer) {
@@ -1425,13 +1582,102 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
         if (baseHeight > 0) zoomLayer.style.height = Math.ceil(baseHeight * nextZoom) + 'px';
       }
 
+      if (viewport && focusPoint) {
+        viewport.scrollLeft = focusPoint.contentX * nextZoom - focusPoint.viewportX;
+        viewport.scrollTop = focusPoint.contentY * nextZoom - focusPoint.viewportY;
+      }
+
+      if (mapRoot) {
+        mapRoot.classList.toggle('zoomed-in', nextZoom >= 1.25);
+      }
+
       if (zoomLabel) {
         zoomLabel.textContent = Math.round(nextZoom * 100) + '%';
       }
     }
 
     function adjustSchemaMapZoom(delta) {
-      setSchemaMapZoom(mapZoomState.value + delta);
+      setSchemaMapZoom(mapZoomState.value + delta, schemaMapViewportCenterFocus());
+    }
+
+    function resetSchemaMapView() {
+      const viewport = document.querySelector('.schema-link-map-viewport');
+      setSchemaMapZoom(1);
+      if (viewport) {
+        viewport.scrollLeft = 0;
+        viewport.scrollTop = 0;
+      }
+    }
+
+    function schemaMapViewportCenterFocus() {
+      const viewport = document.querySelector('.schema-link-map-viewport');
+      if (!viewport) return undefined;
+      const viewportX = viewport.clientWidth / 2;
+      const viewportY = viewport.clientHeight / 2;
+
+      return {
+        viewportX,
+        viewportY,
+        contentX: (viewport.scrollLeft + viewportX) / mapZoomState.value,
+        contentY: (viewport.scrollTop + viewportY) / mapZoomState.value,
+      };
+    }
+
+    function bindSchemaMapGestures(viewport) {
+      const panState = {
+        active: false,
+        startX: 0,
+        startY: 0,
+        scrollLeft: 0,
+        scrollTop: 0,
+      };
+
+      viewport.addEventListener('wheel', event => {
+        event.preventDefault();
+        const rect = viewport.getBoundingClientRect();
+        const viewportX = event.clientX - rect.left;
+        const viewportY = event.clientY - rect.top;
+        const focusPoint = {
+          viewportX,
+          viewportY,
+          contentX: (viewport.scrollLeft + viewportX) / mapZoomState.value,
+          contentY: (viewport.scrollTop + viewportY) / mapZoomState.value,
+        };
+        const zoomFactor = event.deltaY < 0 ? 1.12 : 0.88;
+        setSchemaMapZoom(mapZoomState.value * zoomFactor, focusPoint);
+      }, { passive: false });
+
+      viewport.addEventListener('pointerdown', event => {
+        if (event.button !== 0) return;
+        panState.active = true;
+        panState.startX = event.clientX;
+        panState.startY = event.clientY;
+        panState.scrollLeft = viewport.scrollLeft;
+        panState.scrollTop = viewport.scrollTop;
+        viewport.setPointerCapture(event.pointerId);
+        const mapRoot = document.getElementById('schema-link-map-root');
+        if (mapRoot) mapRoot.classList.add('dragging');
+      });
+
+      viewport.addEventListener('pointermove', event => {
+        if (!panState.active) return;
+        viewport.scrollLeft = panState.scrollLeft - (event.clientX - panState.startX);
+        viewport.scrollTop = panState.scrollTop - (event.clientY - panState.startY);
+      });
+
+      viewport.addEventListener('pointerup', event => {
+        if (!panState.active) return;
+        panState.active = false;
+        viewport.releasePointerCapture(event.pointerId);
+        const mapRoot = document.getElementById('schema-link-map-root');
+        if (mapRoot) mapRoot.classList.remove('dragging');
+      });
+
+      viewport.addEventListener('pointercancel', () => {
+        panState.active = false;
+        const mapRoot = document.getElementById('schema-link-map-root');
+        if (mapRoot) mapRoot.classList.remove('dragging');
+      });
     }
 
     function renderCurrentSchemaMap() {
@@ -1478,7 +1724,7 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
     document.getElementById('schema-map-primary').addEventListener('click', () => setSchemaMapMode('primary'));
     document.getElementById('schema-map-zoom-out').addEventListener('click', () => adjustSchemaMapZoom(-0.15));
     document.getElementById('schema-map-zoom-in').addEventListener('click', () => adjustSchemaMapZoom(0.15));
-    document.getElementById('schema-map-zoom-reset').addEventListener('click', () => setSchemaMapZoom(1));
+    document.getElementById('schema-map-zoom-reset').addEventListener('click', () => resetSchemaMapView());
   </script>
 </body>
 </html>`;
