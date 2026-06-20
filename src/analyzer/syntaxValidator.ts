@@ -33,6 +33,19 @@ export function validateAndParseJSON(rawText: string): ValidationReport {
         error: detail,
       };
     } catch {
+      const repaired = repairRawLineBreaksInsideStrings(trimmed);
+      if (repaired !== trimmed) {
+        try {
+          return {
+            status: 'warning',
+            parsedData: JSON5.parse(repaired),
+            error: detail,
+          };
+        } catch {
+          // Fall through to the critical report below.
+        }
+      }
+
       return {
         status: 'critical',
         parsedData: null,
@@ -97,6 +110,52 @@ function hasRawLineBreakInsideString(raw: string): boolean {
   }
 
   return false;
+}
+
+function repairRawLineBreaksInsideStrings(raw: string): string {
+  let repaired = '';
+  let inString = false;
+  let escaped = false;
+
+  for (const char of raw) {
+    if (!inString) {
+      repaired += char;
+      if (char === '"') inString = true;
+      continue;
+    }
+
+    if (escaped) {
+      repaired += char;
+      escaped = false;
+      continue;
+    }
+
+    if (char === '\\') {
+      repaired += char;
+      escaped = true;
+      continue;
+    }
+
+    if (char === '"') {
+      repaired += char;
+      inString = false;
+      continue;
+    }
+
+    if (char === '\n') {
+      repaired += '\\n';
+      continue;
+    }
+
+    if (char === '\r') {
+      repaired += '\\n';
+      continue;
+    }
+
+    repaired += char;
+  }
+
+  return repaired;
 }
 
 function hasLikelyUnescapedQuote(raw: string): boolean {

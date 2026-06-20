@@ -353,6 +353,18 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
     h1, h2, h3 { margin: 0 0 12px; }
     .meta { color: var(--muted); margin: 4px 0; }
     .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin: 20px 0; }
+    .export-toolbar {
+      align-items: center;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 12px 0 16px;
+    }
+    .export-status {
+      color: var(--muted);
+      font-size: 0.86rem;
+      font-weight: 700;
+    }
     .report-tabs {
       border-bottom: 1px solid var(--border);
       display: flex;
@@ -585,6 +597,7 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
       width: max-content;
     }
     .schema-link-map .map-edge {
+      fill: none;
       stroke: #8ec5e8;
       stroke-width: 1.6;
       stroke-dasharray: 420;
@@ -614,6 +627,10 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
       filter: drop-shadow(0 4px 8px rgba(15,23,42,0.22));
       stroke-width: 5;
     }
+    .schema-link-map .map-node.collapsed circle {
+      stroke: #f59e0b;
+      stroke-width: 5;
+    }
     .schema-link-map .map-node text {
       fill: #0f172a;
       font-size: 14px;
@@ -628,6 +645,14 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
     }
     .schema-link-map.zoomed-in .map-node text {
       font-size: 16px;
+    }
+    .schema-link-map .map-expander {
+      fill: #111827;
+      font-family: Consolas, "SFMono-Regular", monospace;
+      font-size: 13px;
+      font-weight: 800;
+      pointer-events: none;
+      text-anchor: middle;
     }
     .schema-map-detail {
       background: #f8fafc;
@@ -660,12 +685,379 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
       color: var(--muted);
       padding: 18px;
     }
+    .schema-link-map.no-animation .map-edge,
+    .schema-link-map.no-animation .map-edge-label,
+    .schema-link-map.no-animation .map-node {
+      animation: none;
+      opacity: 1;
+      stroke-dashoffset: 0;
+    }
     .schema-map-summary {
       color: var(--muted);
       font-size: 0.86rem;
       padding: 12px 14px 0;
       position: relative;
       z-index: 1;
+    }
+    .layered-map-shell {
+      background: #020617;
+      border: 1px solid #172033;
+      border-radius: 8px;
+      color: #f8fafc;
+      min-height: 520px;
+      overflow: auto;
+      padding: 18px;
+    }
+    .layered-dag-summary {
+      color: #cbd5e1;
+      font-size: 0.88rem;
+      margin: 0 0 14px;
+    }
+    .layered-dag-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .layered-dag-toolbar button {
+      background: #0f172a;
+      border-color: #334155;
+      color: #e2e8f0;
+    }
+    .layered-dag-toolbar button.active {
+      background: #164e63;
+      border-color: #38bdf8;
+      color: #f0f9ff;
+    }
+    .layered-dag-grid {
+      display: grid;
+      gap: 14px;
+      grid-template-columns: repeat(6, minmax(230px, 1fr));
+      min-width: 1480px;
+    }
+    .layer-column {
+      border-left: 1px solid #263449;
+      padding-left: 12px;
+    }
+    .layer-column h3 {
+      color: #f8fafc;
+      font-size: 0.82rem;
+      letter-spacing: 0.02em;
+      margin: 0 0 12px;
+      text-transform: uppercase;
+    }
+    .dag-node-card {
+      background: #0f172a;
+      border: 1px solid #243247;
+      border-radius: 8px;
+      box-shadow: 0 10px 24px rgba(0,0,0,0.18);
+      margin-bottom: 10px;
+      overflow: visible;
+    }
+    .dag-node-card[data-has-discrepancy="true"] {
+      background: linear-gradient(90deg, rgba(245,158,11,0.16), #0f172a 42%);
+      border-left: 4px solid #f59e0b !important;
+    }
+    .dag-node-card.shared {
+      border-color: #22c55e;
+      box-shadow: 0 0 0 1px rgba(34,197,94,0.18), 0 10px 24px rgba(0,0,0,0.2);
+    }
+    .dag-node-card.anchor {
+      background: #082f49;
+      border-color: #38bdf8;
+      box-shadow: 0 0 0 1px rgba(56,189,248,0.22), 0 10px 24px rgba(0,0,0,0.22);
+    }
+    .dag-node-card.warning {
+      border-color: #f59e0b;
+      box-shadow: 0 0 0 1px rgba(245,158,11,0.3), 0 10px 24px rgba(0,0,0,0.22);
+    }
+    .dag-node-card.highlight {
+      border-color: #38bdf8;
+      box-shadow: 0 0 0 2px rgba(56,189,248,0.35), 0 10px 24px rgba(0,0,0,0.2);
+    }
+    .dag-node-header {
+      align-items: flex-start;
+      display: grid;
+      gap: 8px;
+      grid-template-columns: 28px minmax(0, 1fr);
+      padding: 10px;
+    }
+    .dag-node-toggle {
+      align-items: center;
+      background: #111827;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      color: #e2e8f0;
+      display: inline-flex;
+      height: 26px;
+      justify-content: center;
+      padding: 0;
+      width: 26px;
+    }
+    .dag-node-toggle:disabled {
+      color: #64748b;
+      cursor: default;
+      opacity: 0.55;
+    }
+    .dag-type {
+      color: #93c5fd;
+      display: block;
+      font-size: 0.72rem;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+    .dag-label {
+      color: #f8fafc;
+      display: block;
+      font-weight: 700;
+      line-height: 1.25;
+      overflow-wrap: anywhere;
+    }
+    .dag-identity {
+      color: #94a3b8;
+      display: block;
+      font-family: Consolas, "SFMono-Regular", monospace;
+      font-size: 0.72rem;
+      margin-top: 4px;
+      overflow-wrap: anywhere;
+    }
+    .dag-shared-badge {
+      background: rgba(34,197,94,0.12);
+      border: 1px solid rgba(34,197,94,0.32);
+      border-radius: 999px;
+      color: #86efac;
+      display: inline-block;
+      font-size: 0.68rem;
+      font-weight: 800;
+      margin-top: 7px;
+      padding: 2px 7px;
+    }
+    .dag-anchor-badge {
+      background: rgba(56,189,248,0.14);
+      border-color: rgba(56,189,248,0.34);
+      color: #bae6fd;
+    }
+    .dag-metadata-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-top: 8px;
+    }
+    .dag-metadata-badge {
+      background: rgba(148,163,184,0.1);
+      border: 1px solid rgba(148,163,184,0.24);
+      border-radius: 999px;
+      color: #cbd5e1;
+      cursor: pointer;
+      font-size: 0.68rem;
+      font-weight: 700;
+      padding: 2px 7px;
+      position: relative;
+    }
+    button.dag-metadata-badge {
+      font-family: inherit;
+    }
+    .dag-metadata-badge[data-tooltip]:hover::after,
+    .dag-metadata-badge[data-tooltip]:focus-visible::after {
+      background: #020617;
+      border: 1px solid #475569;
+      border-radius: 6px;
+      bottom: calc(100% + 8px);
+      box-shadow: 0 14px 34px rgba(0,0,0,0.34);
+      color: #e2e8f0;
+      content: attr(data-tooltip);
+      font-family: Consolas, "SFMono-Regular", monospace;
+      font-size: 0.72rem;
+      font-weight: 500;
+      left: 0;
+      line-height: 1.35;
+      max-width: 340px;
+      min-width: 220px;
+      padding: 8px 10px;
+      pointer-events: none;
+      position: absolute;
+      white-space: pre-wrap;
+      z-index: 20;
+    }
+    .dag-warning-badge {
+      background: rgba(245,158,11,0.14);
+      border: 1px solid rgba(245,158,11,0.38);
+      border-radius: 999px;
+      color: #fcd34d;
+      display: inline-block;
+      font-size: 0.68rem;
+      font-weight: 800;
+      margin-top: 7px;
+      padding: 2px 7px;
+    }
+    .dag-peek-panel {
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      box-shadow: 0 18px 42px rgba(0,0,0,0.3);
+      color: #e2e8f0;
+      margin-bottom: 16px;
+      padding: 14px;
+    }
+    .dag-peek-panel.hidden { display: none; }
+    .dag-peek-panel h3 {
+      color: #f8fafc;
+      font-size: 0.95rem;
+      margin: 0 0 10px;
+    }
+    .dag-peek-close {
+      float: right;
+      background: #111827;
+      border-color: #334155;
+      color: #e2e8f0;
+      padding: 4px 8px;
+    }
+    .dag-peek-list {
+      display: grid;
+      gap: 8px;
+      margin: 0;
+    }
+    .dag-peek-item {
+      background: rgba(15,23,42,0.75);
+      border: 1px solid #243247;
+      border-radius: 6px;
+      padding: 8px;
+    }
+    .dag-peek-type {
+      color: #93c5fd;
+      display: block;
+      font-size: 0.72rem;
+      font-weight: 800;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+    }
+    .dag-peek-line {
+      color: #cbd5e1;
+      font-family: Consolas, "SFMono-Regular", monospace;
+      font-size: 0.74rem;
+      overflow-wrap: anywhere;
+    }
+    .dag-children {
+      border-top: 1px solid #243247;
+      padding: 8px 10px 10px 38px;
+    }
+    .dag-node-card.collapsed .dag-children { display: none; }
+    .dag-edge-row {
+      align-items: center;
+      border-left: 2px solid #64748b;
+      color: #cbd5e1;
+      display: grid;
+      gap: 8px;
+      grid-template-columns: minmax(64px, 0.72fr) 18px minmax(0, 1fr);
+      margin: 6px 0;
+      padding-left: 8px;
+    }
+    .dag-edge-row.intent-transactional { border-left-color: #22c55e; }
+    .dag-edge-row.intent-transactional .dag-edge-label,
+    .dag-edge-row.intent-transactional .dag-edge-arrow { color: #86efac; }
+    .dag-edge-row.intent-structural { border-left-color: #38bdf8; }
+    .dag-edge-row.intent-structural .dag-edge-label,
+    .dag-edge-row.intent-structural .dag-edge-arrow { color: #93c5fd; }
+    .dag-edge-row.intent-reference {
+      border-left-color: #94a3b8;
+      border-left-style: dashed;
+    }
+    .dag-edge-row.intent-reference .dag-edge-label,
+    .dag-edge-row.intent-reference .dag-edge-arrow { color: #cbd5e1; }
+    .dag-edge-row.intent-metadata {
+      border-left-color: #64748b;
+      opacity: 0.82;
+    }
+    .dag-edge-label {
+      color: #a7f3d0;
+      font-family: Consolas, "SFMono-Regular", monospace;
+      font-size: 0.72rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .dag-edge-arrow { color: #64748b; text-align: center; }
+    .dag-target {
+      background: transparent;
+      border: 0;
+      color: #bae6fd;
+      font-family: inherit;
+      font-size: 0.78rem;
+      padding: 0;
+      text-align: left;
+      text-decoration: underline;
+      text-decoration-color: rgba(186,230,253,0.45);
+    }
+    .dag-empty {
+      color: #94a3b8;
+      font-size: 0.85rem;
+      margin: 0;
+    }
+    .summary-panel {
+      background: #ffffff;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin: 0 0 24px;
+      padding: 22px;
+    }
+    .summary-panel h2 {
+      color: var(--accent);
+      margin-bottom: 14px;
+    }
+    .summary-grid {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    }
+    .summary-card {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .summary-card.warn {
+      background: #fffbeb;
+      border-color: #f59e0b;
+    }
+    .summary-card.danger {
+      background: #fff5f5;
+      border-color: #f87171;
+    }
+    .summary-label {
+      color: var(--muted);
+      display: block;
+      font-size: 0.75rem;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+    .summary-value {
+      color: var(--text);
+      display: block;
+      font-size: 1.45rem;
+      font-weight: 850;
+      margin-top: 4px;
+    }
+    .summary-note {
+      color: var(--muted);
+      display: block;
+      font-size: 0.8rem;
+      margin-top: 4px;
+      overflow-wrap: anywhere;
+    }
+    .summary-list {
+      display: grid;
+      gap: 8px;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      margin-top: 16px;
+    }
+    .summary-pill {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 999px;
+      color: #334155;
+      font-size: 0.82rem;
+      font-weight: 700;
+      padding: 6px 10px;
     }
     @keyframes draw-map-edge {
       to { stroke-dashoffset: 0; }
@@ -734,9 +1126,11 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
     <button type="button" class="report-tab active" data-tab="health" role="tab" aria-selected="true">Health Diagnostics</button>
     <button type="button" class="report-tab" data-tab="semantic" role="tab" aria-selected="false">Semantic Graph</button>
     <button type="button" class="report-tab" data-tab="map" role="tab" aria-selected="false">Relationship Map</button>
+    <button type="button" class="report-tab" data-tab="layers" role="tab" aria-selected="false">Layered Entity Map</button>
   </nav>
 
   <div id="tab-panel-health" class="tab-panel active" role="tabpanel">
+    <div id="summary-panel"></div>
     <div id="diagnostic-panel"></div>
     <div id="scrape-warning-panel"></div>
     <div id="quality-panel"></div>
@@ -783,6 +1177,12 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
 
     <section>
       <h2>Graph-Ready Entities</h2>
+      <p class="meta">Optimized JSON-LD compiled from the normalized, deduplicated, graph-resolved schema array.</p>
+      <div class="export-toolbar">
+        <button type="button" id="copy-clean-jsonld">Copy Clean JSON-LD</button>
+        <button type="button" id="download-clean-jsonld">Download Optimized Schema</button>
+        <span id="clean-jsonld-status" class="export-status" role="status" aria-live="polite"></span>
+      </div>
       <details>
         <summary>Show consolidated graph-ready JSON</summary>
         <pre>${escapeHtml(JSON.stringify(report.entitiesForGraphResolver, null, 2))}</pre>
@@ -801,6 +1201,8 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
       <div class="map-toolbar">
         <button type="button" id="schema-map-full" class="map-mode active">Full graph</button>
         <button type="button" id="schema-map-primary" class="map-mode">Primary graph</button>
+        <button type="button" id="schema-map-expand-all">Expand all</button>
+        <button type="button" id="schema-map-collapse-all">Collapse all</button>
         <button type="button" id="schema-map-zoom-out">Zoom out</button>
         <span id="schema-map-zoom-label" class="zoom-label">100%</span>
         <button type="button" id="schema-map-zoom-in">Zoom in</button>
@@ -810,10 +1212,19 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
       <div id="schema-map-detail" class="schema-map-detail hidden"></div>
     </section>
   </div>
+
+  <div id="tab-panel-layers" class="tab-panel" role="tabpanel">
+    <section>
+      <h2>Layered Semantic Entity Map</h2>
+      <p class="meta">Semantic overview grouped by page, website, business, content/catalog, and detail layers.</p>
+      <div id="layered-map-root" class="layered-map-shell"></div>
+    </section>
+  </div>
   <script>
     const reportData = ${escapeScriptJson(report)};
     const mapZoomState = { value: 1 };
     const mapViewState = { mode: 'full' };
+    const mapRenderState = { graph: null, canvas: null, collapsedIds: new Set(), hasDrawn: false };
 
     function appendText(parent, className, text) {
       const span = document.createElement('span');
@@ -1028,7 +1439,6 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
         return;
       }
 
-      layoutRelationshipGraph(graph);
       const summary = document.createElement('p');
       summary.className = 'schema-map-summary';
       summary.textContent = scopeLabel + ': ' + graph.nodes.length + ' nodes / ' + graph.links.length + ' links';
@@ -1044,7 +1454,10 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
       viewport.appendChild(canvas);
       container.appendChild(viewport);
 
-      drawRelationshipGraph(graph, canvas);
+      mapRenderState.graph = graph;
+      mapRenderState.canvas = canvas;
+      mapRenderState.collapsedIds = new Set();
+      mapRenderState.hasDrawn = false;
       setSchemaMapZoom(1);
       bindSchemaMapGestures(viewport);
     }
@@ -1168,6 +1581,80 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
       });
     }
 
+    function visibleRelationshipGraph(graph) {
+      if (!graph) return { nodes: [], links: [] };
+      const hiddenIds = new Set();
+      const childrenById = schemaMapChildrenById(graph);
+
+      function hideChildren(nodeId) {
+        (childrenById.get(nodeId) || []).forEach(child => {
+          if (hiddenIds.has(child.id)) return;
+          hiddenIds.add(child.id);
+          hideChildren(child.id);
+        });
+      }
+
+      mapRenderState.collapsedIds.forEach(nodeId => hideChildren(nodeId));
+
+      const nodes = graph.nodes.filter(node => !hiddenIds.has(node.id));
+      const visibleIds = new Set(nodes.map(node => node.id));
+      const links = graph.links.filter(link =>
+        visibleIds.has(link.source.id) && visibleIds.has(link.target.id)
+      );
+
+      return { nodes, links };
+    }
+
+    function schemaMapChildrenById(graph) {
+      const childrenById = new Map();
+      if (!graph) return childrenById;
+
+      graph.links.forEach(link => {
+        const children = childrenById.get(link.source.id) || [];
+        if (!children.some(child => child.id === link.target.id)) {
+          children.push(link.target);
+        }
+        childrenById.set(link.source.id, children);
+      });
+
+      return childrenById;
+    }
+
+    function schemaMapNodeHasChildren(nodeId) {
+      return (schemaMapChildrenById(mapRenderState.graph).get(nodeId) || []).length > 0;
+    }
+
+    function toggleSchemaMapBranch(nodeId) {
+      if (!schemaMapNodeHasChildren(nodeId)) return;
+      if (mapRenderState.collapsedIds.has(nodeId)) {
+        mapRenderState.collapsedIds.delete(nodeId);
+      } else {
+        mapRenderState.collapsedIds.add(nodeId);
+      }
+      redrawSchemaMapAtCurrentZoom();
+    }
+
+    function expandAllSchemaMapBranches() {
+      if (!ensureSchemaMapReady()) return;
+      mapRenderState.collapsedIds.clear();
+      redrawSchemaMapAtCurrentZoom();
+    }
+
+    function collapseAllSchemaMapBranches() {
+      if (!ensureSchemaMapReady()) return;
+      mapRenderState.collapsedIds = new Set(
+        (mapRenderState.graph?.nodes || [])
+          .filter(node => schemaMapNodeHasChildren(node.id))
+          .map(node => node.id)
+      );
+      redrawSchemaMapAtCurrentZoom();
+    }
+
+    function redrawSchemaMapAtCurrentZoom() {
+      if (!mapRenderState.graph) return;
+      setSchemaMapZoom(mapZoomState.value, schemaMapViewportCenterFocus());
+    }
+
     function schemaMapType(value) {
       if (!value || typeof value !== 'object') return 'Schema';
       const type = value['@type'];
@@ -1240,40 +1727,61 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
       return text.length > maxLength ? text.slice(0, maxLength - 1) + '...' : text;
     }
 
-    function layoutRelationshipGraph(graph) {
-      const width = 980;
-      const height = Math.max(520, 420 + graph.nodes.length * 7);
-      const centerX = width / 2;
-      const centerY = height / 2;
-      const byDepth = new Map();
+    function layoutRelationshipGraph(graph, spread = 1) {
+      const spreadFactor = Math.max(1, spread);
+      const leftPadding = 90;
+      const topPadding = 90;
+      const columnGap = 300 * spreadFactor;
+      const rowGap = 74 * spreadFactor;
+      const childrenById = new Map();
+      const incomingIds = new Set();
+      const visited = new Set();
+      let nextY = topPadding;
+      let maxDepth = 0;
 
-      graph.width = width;
-      graph.height = height;
-
-      graph.nodes.forEach(node => {
-        const bucket = byDepth.get(node.depth) || [];
-        bucket.push(node);
-        byDepth.set(node.depth, bucket);
+      graph.links.forEach(link => {
+        const children = childrenById.get(link.source.id) || [];
+        if (!children.some(child => child.id === link.target.id)) {
+          children.push(link.target);
+        }
+        childrenById.set(link.source.id, children);
+        incomingIds.add(link.target.id);
       });
 
-      graph.nodes.forEach(node => {
-        if (node.depth === 0) {
-          node.x = centerX;
-          node.y = centerY;
-          return;
+      const roots = graph.nodes.filter(node => !incomingIds.has(node.id));
+      const layoutRoots = roots.length > 0 ? roots : graph.nodes.slice(0, 1);
+
+      function assignNode(node, depth) {
+        if (visited.has(node.id)) return;
+        visited.add(node.id);
+        node.layoutDepth = depth;
+        maxDepth = Math.max(maxDepth, depth);
+
+        const children = (childrenById.get(node.id) || []).filter(child => !visited.has(child.id));
+        if (children.length === 0) {
+          node.y = nextY;
+          nextY += rowGap;
+        } else {
+          children.forEach(child => assignNode(child, depth + 1));
+          node.y = children.reduce((sum, child) => sum + child.y, 0) / children.length;
         }
 
-        const bucket = byDepth.get(node.depth) || [node];
-        const index = bucket.indexOf(node);
-        const radius = Math.min(120 + node.depth * 130, Math.min(width, height) * 0.44);
-        const angleStep = (Math.PI * 2) / Math.max(bucket.length, 1);
-        const angle = -Math.PI / 2 + angleStep * index + node.depth * 0.28;
-        node.x = centerX + Math.cos(angle) * radius;
-        node.y = centerY + Math.sin(angle) * radius;
+        node.x = leftPadding + depth * columnGap;
+      }
+
+      layoutRoots.forEach(root => assignNode(root, 0));
+      graph.nodes.forEach(node => {
+        if (!visited.has(node.id)) {
+          assignNode(node, maxDepth + 1);
+        }
       });
+
+      graph.width = Math.round(leftPadding * 2 + (maxDepth + 1) * columnGap + 380);
+      graph.height = Math.round(Math.max(560, nextY + topPadding));
     }
 
     function drawRelationshipGraph(graph, container) {
+      container.textContent = '';
       const svg = createSvgElement('svg');
       svg.setAttribute('viewBox', '0 0 ' + graph.width + ' ' + graph.height);
       svg.setAttribute('width', graph.width);
@@ -1303,28 +1811,34 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
     }
 
     function drawSchemaLink(svg, link) {
-      const points = shortenLine(link.source.x, link.source.y, link.target.x, link.target.y, 18);
-      const line = createSvgElement('line');
-      line.setAttribute('class', 'map-edge');
-      line.setAttribute('x1', points.x1);
-      line.setAttribute('y1', points.y1);
-      line.setAttribute('x2', points.x2);
-      line.setAttribute('y2', points.y2);
-      line.setAttribute('marker-end', 'url(#schema-arrow)');
-      svg.appendChild(line);
+      const points = directionalLinkPoints(link.source, link.target, 18);
+      const curve = Math.max(80, Math.abs(points.x2 - points.x1) * 0.42);
+      const path = createSvgElement('path');
+      path.setAttribute('class', 'map-edge');
+      path.setAttribute(
+        'd',
+        'M' + points.x1 + ' ' + points.y1
+          + ' C' + (points.x1 + curve) + ' ' + points.y1
+          + ' ' + (points.x2 - curve) + ' ' + points.y2
+          + ' ' + points.x2 + ' ' + points.y2
+      );
+      path.setAttribute('marker-end', 'url(#schema-arrow)');
+      svg.appendChild(path);
 
       const label = createSvgElement('text');
       label.setAttribute('class', 'map-edge-label');
-      label.setAttribute('text-anchor', 'middle');
-      label.setAttribute('x', (points.x1 + points.x2) / 2);
-      label.setAttribute('y', (points.y1 + points.y2) / 2 - 6);
+      label.setAttribute('text-anchor', 'start');
+      label.setAttribute('x', points.x1 + Math.min(curve, 120) * 0.55);
+      label.setAttribute('y', points.y1 + (points.y2 - points.y1) * 0.35 - 6);
       label.textContent = link.label;
       svg.appendChild(label);
     }
 
     function drawSchemaNode(svg, node) {
       const group = createSvgElement('g');
-      group.setAttribute('class', 'map-node');
+      const hasChildren = schemaMapNodeHasChildren(node.id);
+      const isCollapsed = mapRenderState.collapsedIds.has(node.id);
+      group.setAttribute('class', 'map-node' + (isCollapsed ? ' collapsed' : ''));
       group.setAttribute('transform', 'translate(' + node.x + ' ' + node.y + ')');
       group.setAttribute('tabindex', '0');
       group.setAttribute('role', 'button');
@@ -1335,6 +1849,15 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
       circle.setAttribute('r', node.depth === 0 ? '12' : '10');
       circle.setAttribute('fill', node.color);
       group.appendChild(circle);
+
+      if (hasChildren) {
+        const expander = createSvgElement('text');
+        expander.setAttribute('class', 'map-expander');
+        expander.setAttribute('x', '0');
+        expander.setAttribute('y', '4');
+        expander.textContent = isCollapsed ? '+' : '-';
+        group.appendChild(expander);
+      }
 
       const title = createSvgElement('title');
       title.textContent = node.label;
@@ -1349,6 +1872,11 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
       group.addEventListener('click', event => {
         event.stopPropagation();
         renderSchemaMapNodeDetail(node, group);
+      });
+
+      group.addEventListener('dblclick', event => {
+        event.stopPropagation();
+        toggleSchemaMapBranch(node.id);
       });
 
       group.addEventListener('keydown', event => {
@@ -1376,6 +1904,17 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
       title.textContent = node.label;
       panel.appendChild(title);
 
+      if (schemaMapNodeHasChildren(node.id)) {
+        const toggle = document.createElement('button');
+        toggle.type = 'button';
+        toggle.textContent = mapRenderState.collapsedIds.has(node.id)
+          ? 'Expand branch'
+          : 'Collapse branch';
+        toggle.style.margin = '0 0 12px';
+        toggle.addEventListener('click', () => toggleSchemaMapBranch(node.id));
+        panel.appendChild(toggle);
+      }
+
       const list = document.createElement('dl');
       (node.details || []).forEach(detail => {
         const term = document.createElement('dt');
@@ -1396,6 +1935,19 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
       panel.classList.add('hidden');
     }
 
+    function directionalLinkPoints(source, target, padding) {
+      if (target.x >= source.x) {
+        return {
+          x1: source.x + padding,
+          y1: source.y,
+          x2: target.x - padding,
+          y2: target.y,
+        };
+      }
+
+      return shortenLine(source.x, source.y, target.x, target.y, padding);
+    }
+
     function shortenLine(x1, y1, x2, y2, padding) {
       const dx = x2 - x1;
       const dy = y2 - y1;
@@ -1413,6 +1965,217 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
 
     function createSvgElement(name) {
       return document.createElementNS('http://www.w3.org/2000/svg', name);
+    }
+
+    function renderAuditSummary(report, container) {
+      container.textContent = '';
+      const summary = buildAuditSummary(report);
+
+      const panel = document.createElement('section');
+      panel.className = 'summary-panel';
+      const title = document.createElement('h2');
+      title.textContent = 'Schema Summary';
+      panel.appendChild(title);
+
+      const grid = document.createElement('div');
+      grid.className = 'summary-grid';
+      [
+        {
+          label: 'Schema Roots',
+          value: summary.rootCount,
+          note: summary.rootTypes.length + ' root type groups',
+        },
+        {
+          label: 'Resolved Entities',
+          value: summary.resolvedCount,
+          note: summary.rawCount + ' raw extracted roots',
+        },
+        {
+          label: 'Duplicate / Shared',
+          value: summary.sharedIdentityCount,
+          note: summary.duplicateIdentityCount + ' duplicate identity groups',
+          tone: summary.sharedIdentityCount > 0 ? 'warn' : '',
+        },
+        {
+          label: 'Syntax Errors',
+          value: summary.syntaxErrorCount,
+          note: summary.scrapeWarningCount + ' scrape warnings',
+          tone: summary.syntaxErrorCount > 0 ? 'danger' : '',
+        },
+        {
+          label: 'ItemList Issues',
+          value: summary.itemListIssueCount,
+          note: summary.itemListCount + ' ItemList nodes checked',
+          tone: summary.itemListIssueCount > 0 ? 'warn' : '',
+        },
+        {
+          label: 'DAG Pruning',
+          value: summary.prunedMetadataCount,
+          note: summary.prunedDagNodes + ' visible DAG nodes after pruning',
+        },
+      ].forEach(card => grid.appendChild(renderSummaryCard(card)));
+      panel.appendChild(grid);
+
+      const pills = document.createElement('div');
+      pills.className = 'summary-list';
+      summary.rootTypes.slice(0, 8).forEach(item => {
+        const pill = document.createElement('div');
+        pill.className = 'summary-pill';
+        pill.textContent = item.type + ': ' + item.count;
+        pills.appendChild(pill);
+      });
+
+      summary.itemListIssues.slice(0, 3).forEach(issue => {
+        const pill = document.createElement('div');
+        pill.className = 'summary-pill';
+        pill.textContent = issue.label + ' - ' + issue.detail;
+        pills.appendChild(pill);
+      });
+
+      summary.topShared.slice(0, 3).forEach(shared => {
+        const pill = document.createElement('div');
+        pill.className = 'summary-pill';
+        pill.textContent = 'Shared ' + shared.type + ': ' + shared.count + ' refs';
+        pills.appendChild(pill);
+      });
+
+      if (pills.childNodes.length > 0) {
+        panel.appendChild(pills);
+      }
+
+      container.appendChild(panel);
+    }
+
+    function renderSummaryCard(card) {
+      const element = document.createElement('div');
+      element.className = 'summary-card' + (card.tone ? ' ' + card.tone : '');
+
+      const label = document.createElement('span');
+      label.className = 'summary-label';
+      label.textContent = card.label;
+
+      const value = document.createElement('span');
+      value.className = 'summary-value';
+      value.textContent = String(card.value);
+
+      const note = document.createElement('span');
+      note.className = 'summary-note';
+      note.textContent = card.note;
+
+      element.appendChild(label);
+      element.appendChild(value);
+      element.appendChild(note);
+      return element;
+    }
+
+    function buildAuditSummary(report) {
+      const roots = normalizeRelationshipRoots(report.resolvedEntities || []);
+      const rawRoots = report.rawEntitiesForGraphResolver || report.entitiesForGraphResolver || [];
+      const fullDag = buildLayeredDagGraph(roots, { pruneMetadataLeaves: false });
+      const prunedDag = buildLayeredDagGraph(roots, { pruneMetadataLeaves: true });
+      const identities = collectSchemaIdentities(roots);
+      const duplicates = identities.filter(item => item.count > 1);
+      const itemListIssues = collectItemListIssues(roots);
+
+      return {
+        rootCount: roots.length,
+        rawCount: rawRoots.length,
+        resolvedCount: (report.resolvedEntities || []).length,
+        syntaxErrorCount: (report.detectedSyntaxErrors || []).length,
+        scrapeWarningCount: (report.scrapeWarnings || []).length,
+        rootTypes: countRootTypes(roots),
+        duplicateIdentityCount: duplicates.length,
+        sharedIdentityCount: prunedDag.nodes.filter(node => node.incoming > 1).length,
+        topShared: prunedDag.nodes
+          .filter(node => node.incoming > 1)
+          .sort((a, b) => b.incoming - a.incoming)
+          .slice(0, 8)
+          .map(node => ({ type: node.type, count: node.incoming, label: node.label })),
+        itemListCount: collectItemLists(roots).length,
+        itemListIssueCount: itemListIssues.length,
+        itemListIssues,
+        fullDagNodes: fullDag.nodes.length,
+        prunedDagNodes: prunedDag.nodes.length,
+        prunedMetadataCount: prunedDag.prunedMetadataCount,
+      };
+    }
+
+    function countRootTypes(roots) {
+      const counts = new Map();
+      roots.forEach(root => {
+        const type = schemaMapType(root);
+        counts.set(type, (counts.get(type) || 0) + 1);
+      });
+      return Array.from(counts.entries())
+        .map(([type, count]) => ({ type, count }))
+        .sort((a, b) => b.count - a.count || a.type.localeCompare(b.type));
+    }
+
+    function collectSchemaIdentities(values) {
+      const counts = new Map();
+      const visited = new WeakSet();
+      function visit(value) {
+        if (!value || typeof value !== 'object') return;
+        if (Array.isArray(value)) {
+          value.forEach(visit);
+          return;
+        }
+        if (visited.has(value)) return;
+        visited.add(value);
+
+        const identity = layeredDagDisplayIdentity(value);
+        if (identity) {
+          const key = schemaMapType(value) + ':' + identity;
+          const current = counts.get(key) || {
+            type: schemaMapType(value),
+            identity,
+            count: 0,
+          };
+          current.count += 1;
+          counts.set(key, current);
+        }
+
+        visibleObjectKeys(value).forEach(key => visit(value[key]));
+      }
+
+      visit(values);
+      return Array.from(counts.values()).sort((a, b) => b.count - a.count);
+    }
+
+    function collectItemLists(values) {
+      const lists = [];
+      const visited = new WeakSet();
+      function visit(value) {
+        if (!value || typeof value !== 'object') return;
+        if (Array.isArray(value)) {
+          value.forEach(visit);
+          return;
+        }
+        if (visited.has(value)) return;
+        visited.add(value);
+
+        if (schemaMapType(value) === 'ItemList' && Array.isArray(value.itemListElement)) {
+          lists.push(value);
+        }
+
+        visibleObjectKeys(value).forEach(key => visit(value[key]));
+      }
+
+      visit(values);
+      return lists;
+    }
+
+    function collectItemListIssues(values) {
+      return collectItemLists(values)
+        .map(list => ({
+          label: schemaMapNodeLabel(list),
+          warning: itemListPositionWarning(list),
+        }))
+        .filter(item => item.warning)
+        .map(item => ({
+          label: item.label,
+          detail: item.warning.detail,
+        }));
     }
 
     function renderDiagnostics(errors, container) {
@@ -1564,9 +2327,44 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
       document.querySelectorAll('.tab-panel').forEach(panel => {
         panel.classList.toggle('active', panel.id === 'tab-panel-' + tabName);
       });
+
+      renderDeferredReportTab(tabName);
+    }
+
+    const deferredReportTabs = {
+      map: false,
+      layers: false,
+    };
+
+    function renderDeferredReportTab(tabName) {
+      if (tabName === 'map' && !deferredReportTabs.map) {
+        deferredReportTabs.map = true;
+        renderCurrentSchemaMap();
+      }
+
+      if (tabName === 'layers' && !deferredReportTabs.layers) {
+        deferredReportTabs.layers = true;
+        renderLayeredEntityMap(reportData.resolvedEntities, document.getElementById('layered-map-root'));
+      }
+    }
+
+    function ensureSchemaMapReady() {
+      const panel = document.getElementById('tab-panel-map');
+      if (!panel || !panel.classList.contains('active')) return false;
+
+      if (!deferredReportTabs.map) {
+        renderDeferredReportTab('map');
+      }
+
+      return Boolean(
+        mapRenderState.graph &&
+        document.getElementById('schema-link-map-zoom-layer') &&
+        document.querySelector('.schema-link-map-viewport')
+      );
     }
 
     function setSchemaMapZoom(value, focusPoint) {
+      if (!deferredReportTabs.map && !mapRenderState.graph) return;
       const nextZoom = Math.min(2.5, Math.max(0.35, value));
       const zoomLayer = document.getElementById('schema-link-map-zoom-layer');
       const zoomLabel = document.getElementById('schema-map-zoom-label');
@@ -1574,12 +2372,19 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
       const mapRoot = document.getElementById('schema-link-map-root');
       mapZoomState.value = nextZoom;
 
-      if (zoomLayer) {
-        zoomLayer.style.transform = 'scale(' + nextZoom + ')';
-        const baseWidth = Number(zoomLayer.dataset.baseWidth || 0);
-        const baseHeight = Number(zoomLayer.dataset.baseHeight || 0);
-        if (baseWidth > 0) zoomLayer.style.width = Math.ceil(baseWidth * nextZoom) + 'px';
-        if (baseHeight > 0) zoomLayer.style.height = Math.ceil(baseHeight * nextZoom) + 'px';
+      if (mapRenderState.graph && zoomLayer) {
+        const visibleGraph = visibleRelationshipGraph(mapRenderState.graph);
+        layoutRelationshipGraph(visibleGraph, nextZoom);
+        if (mapRoot) {
+          mapRoot.classList.toggle('no-animation', mapRenderState.hasDrawn);
+        }
+        zoomLayer.style.transform = 'none';
+        zoomLayer.style.width = Math.ceil(visibleGraph.width) + 'px';
+        zoomLayer.style.height = Math.ceil(visibleGraph.height) + 'px';
+        zoomLayer.dataset.baseWidth = String(visibleGraph.width);
+        zoomLayer.dataset.baseHeight = String(visibleGraph.height);
+        drawRelationshipGraph(visibleGraph, zoomLayer);
+        mapRenderState.hasDrawn = true;
       }
 
       if (viewport && focusPoint) {
@@ -1597,10 +2402,12 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
     }
 
     function adjustSchemaMapZoom(delta) {
+      if (!ensureSchemaMapReady()) return;
       setSchemaMapZoom(mapZoomState.value + delta, schemaMapViewportCenterFocus());
     }
 
     function resetSchemaMapView() {
+      if (!ensureSchemaMapReady()) return;
       const viewport = document.querySelector('.schema-link-map-viewport');
       setSchemaMapZoom(1);
       if (viewport) {
@@ -1690,12 +2497,687 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
       );
     }
 
+    function renderLayeredEntityMap(entities, container) {
+      const viewState = { pruneMetadataLeaves: true };
+
+      function render() {
+        container.textContent = '';
+        const graph = buildLayeredDagGraph(entities || [], viewState);
+        if (graph.nodes.length === 0) {
+          const empty = document.createElement('p');
+          empty.className = 'dag-empty';
+          empty.textContent = 'No schema entities available for layered DAG rendering.';
+          container.appendChild(empty);
+          return;
+        }
+
+        const summary = document.createElement('p');
+        summary.className = 'layered-dag-summary';
+        summary.textContent = 'Collapsible layered DAG: ' + graph.nodes.length + ' visible entities / '
+          + graph.links.length + ' relationships / ' + graph.prunedMetadataCount
+          + ' metadata leaves summarized. Shared identities are grouped into anchor hubs.';
+        container.appendChild(summary);
+
+        const toolbar = document.createElement('div');
+        toolbar.className = 'layered-dag-toolbar';
+        const expandButton = document.createElement('button');
+        expandButton.type = 'button';
+        expandButton.textContent = 'Expand all';
+        const collapseButton = document.createElement('button');
+        collapseButton.type = 'button';
+        collapseButton.textContent = 'Collapse all';
+        const metadataButton = document.createElement('button');
+        metadataButton.type = 'button';
+        metadataButton.className = viewState.pruneMetadataLeaves ? 'active' : '';
+        metadataButton.textContent = viewState.pruneMetadataLeaves
+          ? 'Show metadata leaves'
+          : 'Prune metadata leaves';
+        toolbar.appendChild(expandButton);
+        toolbar.appendChild(collapseButton);
+        toolbar.appendChild(metadataButton);
+        container.appendChild(toolbar);
+
+        const peekPanel = document.createElement('div');
+        peekPanel.className = 'dag-peek-panel hidden';
+        container.appendChild(peekPanel);
+
+        const grid = document.createElement('div');
+        grid.className = 'layered-dag-grid';
+        const layerDefs = [
+          { key: 'page', label: 'Page Layer' },
+          { key: 'website', label: 'Website Layer' },
+          { key: 'business', label: 'Business Layer' },
+          { key: 'content', label: 'Content/Catalog Layer' },
+          { key: 'detail', label: 'Detail Layer' },
+          { key: 'anchor', label: 'Shared Anchors' },
+        ];
+
+        layerDefs.forEach(layer => {
+          const column = document.createElement('div');
+          column.className = 'layer-column';
+          const title = document.createElement('h3');
+          title.textContent = layer.label;
+          column.appendChild(title);
+
+          const layerNodes = graph.nodes
+            .filter(node => node.layer === layer.key)
+            .sort((a, b) => b.incoming - a.incoming || a.label.localeCompare(b.label));
+          if (layerNodes.length === 0) {
+            const empty = document.createElement('p');
+            empty.className = 'dag-empty';
+            empty.textContent = 'No entities';
+            column.appendChild(empty);
+          } else {
+            layerNodes.forEach(node => column.appendChild(renderLayeredDagNode(node, graph, peekPanel)));
+          }
+
+          grid.appendChild(column);
+        });
+
+        container.appendChild(grid);
+
+        expandButton.addEventListener('click', () => {
+          container.querySelectorAll('.dag-node-card').forEach(card => {
+            card.classList.remove('collapsed');
+            const toggle = card.querySelector('.dag-node-toggle');
+            if (toggle && !toggle.disabled) toggle.textContent = '-';
+          });
+        });
+
+        collapseButton.addEventListener('click', () => {
+          container.querySelectorAll('.dag-node-card').forEach(card => {
+            const toggle = card.querySelector('.dag-node-toggle');
+            if (!toggle || toggle.disabled) return;
+            card.classList.add('collapsed');
+            toggle.textContent = '+';
+          });
+        });
+
+        metadataButton.addEventListener('click', () => {
+          viewState.pruneMetadataLeaves = !viewState.pruneMetadataLeaves;
+          render();
+        });
+      }
+
+      render();
+    }
+
+    function renderLayeredDagNode(node, graph, peekPanel) {
+      const card = document.createElement('article');
+      card.className = 'dag-node-card'
+        + (node.incoming > 1 ? ' shared' : '')
+        + (node.isAnchor ? ' anchor' : '')
+        + (node.itemListWarning ? ' warning' : '');
+      card.id = node.id;
+      if (node.itemListWarning) {
+        card.dataset.hasDiscrepancy = 'true';
+      }
+
+      const header = document.createElement('div');
+      header.className = 'dag-node-header';
+
+      const toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.className = 'dag-node-toggle';
+      toggle.textContent = node.links.length > 0 ? '-' : '';
+      toggle.disabled = node.links.length === 0;
+      toggle.addEventListener('click', () => {
+        const collapsed = card.classList.toggle('collapsed');
+        toggle.textContent = collapsed ? '+' : '-';
+      });
+      header.appendChild(toggle);
+
+      const title = document.createElement('div');
+      const type = document.createElement('span');
+      type.className = 'dag-type';
+      type.textContent = node.type;
+      const label = document.createElement('span');
+      label.className = 'dag-label';
+      label.textContent = node.label;
+      title.appendChild(type);
+      title.appendChild(label);
+
+      if (node.identity) {
+        const identity = document.createElement('span');
+        identity.className = 'dag-identity';
+        identity.textContent = node.identity;
+        title.appendChild(identity);
+      }
+
+      if (node.incoming > 1) {
+        const badge = document.createElement('span');
+        badge.className = 'dag-shared-badge' + (node.isAnchor ? ' dag-anchor-badge' : '');
+        badge.textContent = node.isAnchor
+          ? 'anchor hub / ' + node.incoming + ' parents'
+          : 'shared by ' + node.incoming + ' parents';
+        title.appendChild(badge);
+      }
+
+      if (node.itemListWarning) {
+        const warning = document.createElement('span');
+        warning.className = 'dag-warning-badge';
+        warning.textContent = node.itemListWarning.summary;
+        warning.title = node.itemListWarning.detail;
+        title.appendChild(warning);
+      }
+
+      if (node.metadataTotal > 0) {
+        title.appendChild(renderLayeredMetadataBadges(node, peekPanel));
+      }
+
+      header.appendChild(title);
+      card.appendChild(header);
+
+      if (node.links.length > 0) {
+        const children = document.createElement('div');
+        children.className = 'dag-children';
+        node.links.forEach(link => {
+          const target = graph.nodeById.get(link.targetId);
+          if (!target) return;
+          const row = document.createElement('div');
+          row.className = 'dag-edge-row intent-' + relationshipIntent(link.label);
+
+          const edgeLabel = document.createElement('span');
+          edgeLabel.className = 'dag-edge-label';
+          edgeLabel.title = link.label;
+          edgeLabel.textContent = link.label;
+
+          const arrow = document.createElement('span');
+          arrow.className = 'dag-edge-arrow';
+          arrow.textContent = '->';
+
+          const targetButton = document.createElement('button');
+          targetButton.type = 'button';
+          targetButton.className = 'dag-target';
+          targetButton.textContent = target.label;
+          targetButton.addEventListener('click', () => focusLayeredDagNode(target.id));
+
+          row.appendChild(edgeLabel);
+          row.appendChild(arrow);
+          row.appendChild(targetButton);
+          children.appendChild(row);
+        });
+        card.appendChild(children);
+      }
+
+      return card;
+    }
+
+    function renderLayeredMetadataBadges(node, peekPanel) {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'dag-metadata-badges';
+
+      Object.keys(node.metadataCounts).sort().forEach(type => {
+        const badge = document.createElement('button');
+        badge.type = 'button';
+        badge.className = 'dag-metadata-badge';
+        badge.textContent = '+' + node.metadataCounts[type] + ' ' + type;
+        const tooltip = metadataTooltipText(node, type);
+        badge.title = tooltip;
+        badge.dataset.tooltip = tooltip;
+        badge.addEventListener('click', event => {
+          event.stopPropagation();
+          renderLayeredMetadataPeek(node, type, peekPanel);
+        });
+        wrapper.appendChild(badge);
+      });
+
+      return wrapper;
+    }
+
+    function metadataTooltipText(node, type) {
+      const leaves = (node.metadataLeaves || []).filter(leaf => leaf.type === type);
+      const lines = [];
+      leaves.slice(0, 6).forEach((leaf, index) => {
+        lines.push(type + ' #' + (index + 1));
+        leaf.lines.slice(0, 4).forEach(line => lines.push('  ' + line));
+      });
+      if (leaves.length > 6) {
+        lines.push('+' + (leaves.length - 6) + ' more. Click to inspect.');
+      } else {
+        lines.push('Click to inspect.');
+      }
+      return lines.join('\\n');
+    }
+
+    function renderLayeredMetadataPeek(node, type, panel) {
+      if (!panel) return;
+      const leaves = (node.metadataLeaves || []).filter(leaf => leaf.type === type);
+      panel.textContent = '';
+      panel.classList.remove('hidden');
+
+      const close = document.createElement('button');
+      close.type = 'button';
+      close.className = 'dag-peek-close';
+      close.textContent = 'Close';
+      close.addEventListener('click', () => panel.classList.add('hidden'));
+      panel.appendChild(close);
+
+      const heading = document.createElement('h3');
+      heading.textContent = node.label + ' / ' + type + ' leaves';
+      panel.appendChild(heading);
+
+      const list = document.createElement('div');
+      list.className = 'dag-peek-list';
+      leaves.slice(0, 40).forEach(leaf => {
+        const item = document.createElement('div');
+        item.className = 'dag-peek-item';
+        const itemType = document.createElement('span');
+        itemType.className = 'dag-peek-type';
+        itemType.textContent = leaf.type;
+        item.appendChild(itemType);
+
+        leaf.lines.forEach(line => {
+          const row = document.createElement('div');
+          row.className = 'dag-peek-line';
+          row.textContent = line;
+          item.appendChild(row);
+        });
+
+        list.appendChild(item);
+      });
+
+      if (leaves.length > 40) {
+        const more = document.createElement('div');
+        more.className = 'dag-peek-line';
+        more.textContent = '+' + (leaves.length - 40) + ' more summarized leaves';
+        list.appendChild(more);
+      }
+
+      panel.appendChild(list);
+      panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    function focusLayeredDagNode(nodeId) {
+      const node = document.getElementById(nodeId);
+      if (!node) return;
+      document.querySelectorAll('.dag-node-card.highlight').forEach(card => {
+        card.classList.remove('highlight');
+      });
+      node.classList.add('highlight');
+      node.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+      window.setTimeout(() => node.classList.remove('highlight'), 1600);
+    }
+
+    function buildLayeredDagGraph(entities, options) {
+      const graphOptions = options || { pruneMetadataLeaves: true };
+      const nodes = [];
+      const links = [];
+      const nodeByKey = new Map();
+      const nodeById = new Map();
+      const visitedObjects = new WeakSet();
+      let prunedMetadataCount = 0;
+
+      function ensureNode(value, path) {
+        const key = layeredDagIdentityKey(value, path);
+        if (nodeByKey.has(key)) return nodeByKey.get(key);
+
+        const type = schemaMapType(value);
+        const node = {
+          id: 'layered-dag-node-' + nodes.length,
+          key,
+          type,
+          label: schemaMapNodeLabel(value),
+          identity: layeredDagDisplayIdentity(value),
+          layer: layeredDagLayer(type),
+          incoming: 0,
+          links: [],
+          metadataCounts: {},
+          metadataLeaves: [],
+          metadataTotal: 0,
+          itemListWarning: itemListPositionWarning(value),
+          isAnchor: false,
+        };
+
+        nodes.push(node);
+        nodeByKey.set(key, node);
+        nodeById.set(node.id, node);
+        return node;
+      }
+
+      function visit(value, path) {
+        if (!isRelationshipObject(value)) return null;
+        const parentNode = ensureNode(value, path);
+        if (visitedObjects.has(value)) return parentNode;
+        visitedObjects.add(value);
+
+        visibleObjectKeys(value).forEach(key => {
+          if (key.charAt(0) === '@') return;
+          const childValue = value[key];
+
+          if (Array.isArray(childValue)) {
+            childValue.forEach((item, index) => {
+              if (!isRelationshipObject(item)) return;
+              if (graphOptions.pruneMetadataLeaves && !shouldRenderAsStandaloneDagNode(item)) {
+                addLayeredMetadataLeaf(parentNode, item);
+                prunedMetadataCount += 1;
+                return;
+              }
+              const childNode = visit(item, path + '.' + key + '[' + index + ']');
+              addLayeredDagLink(parentNode, childNode, key + '[' + index + ']', links);
+            });
+            return;
+          }
+
+          if (!isRelationshipObject(childValue)) return;
+          if (graphOptions.pruneMetadataLeaves && !shouldRenderAsStandaloneDagNode(childValue)) {
+            addLayeredMetadataLeaf(parentNode, childValue);
+            prunedMetadataCount += 1;
+            return;
+          }
+          const childNode = visit(childValue, path + '.' + key);
+          addLayeredDagLink(parentNode, childNode, key, links);
+        });
+
+        return parentNode;
+      }
+
+      normalizeRelationshipRoots(entities).forEach((entity, index) => {
+        visit(entity, 'root[' + index + ']');
+      });
+
+      links.forEach(link => {
+        const source = nodeById.get(link.sourceId);
+        const target = nodeById.get(link.targetId);
+        if (!source || !target) return;
+        source.links.push(link);
+        target.incoming += 1;
+      });
+
+      nodes.forEach(node => {
+        if (!isSharedResourceAnchor(node)) return;
+        node.isAnchor = true;
+        node.layer = 'anchor';
+      });
+
+      return { nodes, links, nodeById, prunedMetadataCount };
+    }
+
+    function addLayeredMetadataLeaf(parentNode, value) {
+      const type = schemaMapType(value);
+      parentNode.metadataCounts[type] = (parentNode.metadataCounts[type] || 0) + 1;
+      parentNode.metadataTotal += 1;
+      if (parentNode.metadataLeaves.length < 180) {
+        parentNode.metadataLeaves.push(metadataLeafPreview(value));
+      }
+    }
+
+    function metadataLeafPreview(value) {
+      const lines = [];
+      visibleObjectKeys(value).forEach(key => {
+        if (key.charAt(0) === '@' || key === '_meta') return;
+        const child = value[key];
+        if (child === null || child === undefined || child === '') return;
+        if (typeof child === 'object') {
+          if (Array.isArray(child)) {
+            const scalarItems = child
+              .filter(item => item === null || typeof item !== 'object')
+              .slice(0, 4)
+              .map(item => String(item));
+            if (scalarItems.length > 0) lines.push(key + ': ' + scalarItems.join(', '));
+          } else if (child.name || child.value || child['@id'] || child.url) {
+            lines.push(key + ': ' + String(child.name || child.value || child['@id'] || child.url));
+          }
+          return;
+        }
+        lines.push(key + ': ' + String(child));
+      });
+
+      if (lines.length === 0) {
+        lines.push(schemaMapNodeLabel(value));
+      }
+
+      return {
+        type: schemaMapType(value),
+        lines: lines.slice(0, 6),
+      };
+    }
+
+    function itemListPositionWarning(value) {
+      if (schemaMapType(value) !== 'ItemList' || !Array.isArray(value.itemListElement)) return null;
+      const positions = value.itemListElement
+        .map((item, index) => ({
+          index,
+          position: Number(item && item.position),
+        }))
+        .filter(item => Number.isFinite(item.position));
+
+      if (positions.length === 0) return null;
+
+      const positionValues = positions.map(item => item.position);
+      const min = Math.min.apply(null, positionValues);
+      const max = Math.max.apply(null, positionValues);
+      const positionSet = new Set(positionValues);
+      const missing = [];
+      for (let position = min; position <= max; position += 1) {
+        if (!positionSet.has(position)) missing.push(position);
+      }
+
+      const mismatches = positions.filter(item => item.position !== item.index + 1);
+      const declaredCount = Number(value.numberOfItems);
+      const hasDeclaredMismatch = Number.isFinite(declaredCount)
+        && declaredCount !== value.itemListElement.length;
+      if (missing.length === 0 && mismatches.length === 0 && !hasDeclaredMismatch) return null;
+
+      const details = [];
+      if (hasDeclaredMismatch) {
+        details.push('declared numberOfItems ' + declaredCount + ' but rendered ' + value.itemListElement.length);
+      }
+      if (missing.length > 0) {
+        details.push('missing positions: ' + missing.join(', '));
+      }
+      if (mismatches.length > 0) {
+        details.push('index mismatches: ' + mismatches.slice(0, 8)
+          .map(item => '[' + item.index + '] has position ' + item.position)
+          .join('; '));
+      }
+
+      return {
+        summary: 'ItemList position gap',
+        detail: details.join(' / '),
+      };
+    }
+
+    function shouldRenderAsStandaloneDagNode(value) {
+      const type = schemaMapType(value);
+      if (type === 'Person' && layeredDagDisplayIdentity(value)) return true;
+      const secondaryMetadataTypes = [
+        'PropertyValue',
+        'ContactPoint',
+        'ShippingDeliveryTime',
+        'QuantitativeValue',
+        'PostalAddress',
+        'Place',
+        'GeoCoordinates',
+        'OpeningHoursSpecification',
+        'DefinedRegion',
+        'MonetaryAmount',
+        'MerchantReturnPolicy',
+        'OfferShippingDetails',
+        'SearchAction',
+        'EntryPoint',
+        'HowToSupply',
+        'HowToTool',
+        'Person',
+      ];
+      return !secondaryMetadataTypes.includes(type);
+    }
+
+    function isSharedResourceAnchor(node) {
+      if (!node.identity || node.incoming < 2) return false;
+      const fixedIdentityTypes = [
+        'Organization',
+        'LocalBusiness',
+        'Brand',
+        'WebSite',
+        'ImageObject',
+        'Person',
+      ];
+      return fixedIdentityTypes.includes(node.type) || node.incoming >= 8;
+    }
+
+    function relationshipIntent(label) {
+      const clean = String(label || '').replace(/\[\d+\]/g, '');
+      if (clean === 'offers' || clean === 'hasOfferCatalog' || clean === 'seller') {
+        return 'transactional';
+      }
+
+      if (clean === 'itemListElement' || clean === 'hasVariant' || clean === 'mainEntity' || clean === 'breadcrumb' || clean === 'step' || clean === 'item') {
+        return 'structural';
+      }
+
+      if (clean === 'brand' || clean === 'author' || clean === 'publisher' || clean === 'organization' || clean === 'worksFor' || clean === 'founder' || clean === 'logo') {
+        return 'reference';
+      }
+
+      if (clean === 'additionalProperty' || clean === 'contactPoint' || clean === 'address' || clean === 'shippingDetails' || clean === 'deliveryTime') {
+        return 'metadata';
+      }
+
+      return 'default';
+    }
+
+    function addLayeredDagLink(source, target, label, links) {
+      if (!source || !target || source.id === target.id) return;
+      const key = source.id + '|' + target.id + '|' + label;
+      if (links.some(link => link.key === key)) return;
+      links.push({
+        key,
+        sourceId: source.id,
+        targetId: target.id,
+        label,
+      });
+    }
+
+    function layeredDagIdentityKey(value, path) {
+      const explicitId = stringIdentity(value && value['@id']);
+      if (explicitId) return '@id:' + explicitId;
+
+      const gtin = stringIdentity(value && (value.gtin || value.gtin8 || value.gtin12 || value.gtin13 || value.gtin14));
+      if (gtin) return 'gtin:' + gtin;
+
+      const sku = stringIdentity(value && value.sku);
+      if (sku) return 'sku:' + schemaMapType(value) + ':' + sku;
+
+      const url = stringIdentity(value && value.url);
+      if (url) return 'url:' + schemaMapType(value) + ':' + url;
+
+      return 'path:' + path;
+    }
+
+    function layeredDagDisplayIdentity(value) {
+      return stringIdentity(value && value['@id'])
+        || stringIdentity(value && value.url)
+        || stringIdentity(value && value.sku)
+        || stringIdentity(value && (value.gtin || value.gtin8 || value.gtin12 || value.gtin13 || value.gtin14))
+        || '';
+    }
+
+    function stringIdentity(value) {
+      return typeof value === 'string' && value.trim().length > 0 ? value.trim() : '';
+    }
+
+    function layeredDagLayer(type) {
+      if (type === 'WebPage' || type === 'CollectionPage' || type === 'SearchResultsPage' || type === 'AboutPage' || type === 'ContactPage') {
+        return 'page';
+      }
+
+      if (type === 'WebSite' || type === 'BreadcrumbList') {
+        return 'website';
+      }
+
+      if (type === 'Organization' || type === 'LocalBusiness' || type === 'Brand' || type === 'Person') {
+        return 'business';
+      }
+
+      if (type === 'ItemList' || type === 'ProductGroup' || type === 'Product' || type === 'OfferCatalog' || type === 'Article' || type === 'BlogPosting' || type === 'HowTo') {
+        return 'content';
+      }
+
+      return 'detail';
+    }
+
     function setSchemaMapMode(mode) {
       mapViewState.mode = mode;
       document.querySelectorAll('.map-mode').forEach(button => {
         button.classList.toggle('active', button.id === 'schema-map-' + mode);
       });
+      if (!deferredReportTabs.map) return;
       renderCurrentSchemaMap();
+    }
+
+    function cleanSchemaForExport(value, seen) {
+      const visited = seen || new WeakSet();
+      if (!value || typeof value !== 'object') return value;
+      if (visited.has(value)) return undefined;
+      visited.add(value);
+
+      if (Array.isArray(value)) {
+        return value
+          .map(item => cleanSchemaForExport(item, visited))
+          .filter(item => item !== undefined);
+      }
+
+      const output = {};
+      Object.entries(value).forEach(([key, child]) => {
+        if (key === '_meta') return;
+        const cleaned = cleanSchemaForExport(child, visited);
+        if (cleaned === undefined) return;
+        output[key] = cleaned;
+      });
+      return output;
+    }
+
+    function optimizedSchemaJsonText() {
+      const cleaned = cleanSchemaForExport(reportData.entitiesForGraphResolver || []);
+      return JSON.stringify(cleaned, null, 2);
+    }
+
+    function setCleanJsonStatus(message) {
+      const status = document.getElementById('clean-jsonld-status');
+      if (status) status.textContent = message;
+    }
+
+    function fallbackCopyText(text) {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.setAttribute('readonly', '');
+      textarea.style.position = 'fixed';
+      textarea.style.left = '-9999px';
+      document.body.appendChild(textarea);
+      textarea.select();
+      const copied = document.execCommand('copy');
+      document.body.removeChild(textarea);
+      return copied;
+    }
+
+    function copyCleanJsonLd() {
+      const text = optimizedSchemaJsonText();
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text)
+          .then(() => setCleanJsonStatus('Copied optimized JSON-LD.'))
+          .catch(() => {
+            const copied = fallbackCopyText(text);
+            setCleanJsonStatus(copied ? 'Copied optimized JSON-LD.' : 'Copy failed.');
+          });
+        return;
+      }
+
+      const copied = fallbackCopyText(text);
+      setCleanJsonStatus(copied ? 'Copied optimized JSON-LD.' : 'Copy failed.');
+    }
+
+    function downloadCleanJsonLd() {
+      const text = optimizedSchemaJsonText();
+      const blob = new Blob([text], { type: 'application/ld+json;charset=utf-8' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = 'optimized-schema.jsonld';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+      setCleanJsonStatus('Downloaded optimized-schema.jsonld.');
     }
 
     function setCollapsed(collapsed) {
@@ -1707,14 +3189,15 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
       });
     }
 
+    renderAuditSummary(reportData, document.getElementById('summary-panel'));
     renderDiagnostics(reportData.detectedSyntaxErrors, document.getElementById('diagnostic-panel'));
     renderScrapeWarnings(reportData.scrapeWarnings, document.getElementById('scrape-warning-panel'));
     renderQualityWarnings(reportData.qualityWarnings, document.getElementById('quality-panel'));
     renderEntityTree(reportData.primaryRoot, document.getElementById('primary-tree-root'));
     renderOrphans(reportData.orphanRoots, document.getElementById('orphan-tree-root'));
     renderResolvedForest(reportData.resolvedEntities, document.getElementById('resolved-forest-root'));
-    renderCurrentSchemaMap();
     renderRawSchemaArray(reportData.rawEntitiesForGraphResolver, document.getElementById('visual-tree-root'));
+    renderDeferredReportTab('health');
     document.querySelectorAll('.report-tab').forEach(tab => {
       tab.addEventListener('click', () => setActiveReportTab(tab.dataset.tab));
     });
@@ -1722,9 +3205,13 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
     document.getElementById('collapse-all').addEventListener('click', () => setCollapsed(true));
     document.getElementById('schema-map-full').addEventListener('click', () => setSchemaMapMode('full'));
     document.getElementById('schema-map-primary').addEventListener('click', () => setSchemaMapMode('primary'));
+    document.getElementById('schema-map-expand-all').addEventListener('click', () => expandAllSchemaMapBranches());
+    document.getElementById('schema-map-collapse-all').addEventListener('click', () => collapseAllSchemaMapBranches());
     document.getElementById('schema-map-zoom-out').addEventListener('click', () => adjustSchemaMapZoom(-0.15));
     document.getElementById('schema-map-zoom-in').addEventListener('click', () => adjustSchemaMapZoom(0.15));
     document.getElementById('schema-map-zoom-reset').addEventListener('click', () => resetSchemaMapView());
+    document.getElementById('copy-clean-jsonld').addEventListener('click', () => copyCleanJsonLd());
+    document.getElementById('download-clean-jsonld').addEventListener('click', () => downloadCleanJsonLd());
   </script>
 </body>
 </html>`;

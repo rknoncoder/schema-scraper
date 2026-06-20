@@ -27,15 +27,18 @@ describe('syntax validator', () => {
     });
   });
 
-  it('isolates unrecoverable raw line breaks inside strings', () => {
+  it('recovers raw line breaks inside strings while keeping a warning', () => {
     const report = validateAndParseJSON(`{
       "@type": "Product",
       "description": "Line one
 Line two"
     }`);
 
-    expect(report.status).toBe('critical');
-    expect(report.parsedData).toBeNull();
+    expect(report.status).toBe('warning');
+    expect(report.parsedData).toMatchObject({
+      '@type': 'Product',
+      description: 'Line one\nLine two',
+    });
     expect(report.error).toMatchObject({
       type: 'RAW_LINE_BREAK',
       suggestedFix: expect.stringContaining('\\n'),
