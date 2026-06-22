@@ -37,6 +37,35 @@ describe('audit action orchestration', () => {
         name: 'Example Org',
       },
     ]);
+    expect(result.strictGoogleEntities).toEqual([]);
+  });
+
+  it('segments recovered JSON-LD away from strict Google entities', () => {
+    const result = processRawPayload({
+      schemas: extractSchemasFromHtml(`
+        <script type="application/ld+json">
+          {
+            "@context": "https://schema.org",
+            "@type": "FAQPage",
+            "mainEntity": [{
+              "@type": "Question",
+              "name": "Question?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Line one
+Line two"
+              }
+            }]
+          }
+        </script>
+      `),
+    });
+
+    expect(result.detectedSyntaxErrors).toHaveLength(1);
+    expect(result.entitiesForGraphResolver[0]).toMatchObject({
+      '@type': 'FAQPage',
+    });
+    expect(result.strictGoogleEntities).toEqual([]);
   });
 
   it('homogenizes scraped microdata tree output into graph-ready entities', () => {

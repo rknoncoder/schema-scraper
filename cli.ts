@@ -29,6 +29,7 @@ type ExportFormat = 'json' | 'html';
 interface CliOptions {
   url?: string;
   compact: boolean;
+  deepRender: boolean;
   format?: ExportFormat;
   graphReady: boolean;
   jsonLd?: string;
@@ -36,14 +37,17 @@ interface CliOptions {
   output?: string;
   renderMode?: ScrapeRenderMode;
   stdin: boolean;
+  timeoutMs?: number;
   tree: boolean;
 }
 
-interface ResolvedAuditReport {
+export interface ResolvedAuditReport {
   url: string;
   finalUrl?: string;
   generatedAt: string;
   rawEntitiesForGraphResolver: GraphEntity[];
+  strictGoogleEntities: GraphEntity[];
+  strictGoogleDiscardedCount: number;
   entitiesForGraphResolver: GraphEntity[];
   resolvedEntities: GraphEntity[];
   scrapeWarnings: string[];
@@ -126,6 +130,7 @@ async function main(argv = process.argv): Promise<void> {
 function parseArgs(args: string[]): CliOptions {
   const options: CliOptions = {
     compact: false,
+    deepRender: false,
     graphReady: false,
     stdin: false,
     tree: false,
@@ -183,6 +188,22 @@ function parseArgs(args: string[]): CliOptions {
 
     if (arg === '--dual-pass') {
       options.renderMode = 'dual-pass';
+      continue;
+    }
+
+    if (arg === '--deep-render') {
+      options.deepRender = true;
+      continue;
+    }
+
+    if (arg === '--timeout') {
+      options.timeoutMs = parseTimeout(args[index + 1]);
+      index += 1;
+      continue;
+    }
+
+    if (arg.startsWith('--timeout=')) {
+      options.timeoutMs = parseTimeout(arg.slice('--timeout='.length));
       continue;
     }
 
@@ -254,7 +275,9 @@ async function loadScrapeInput(options: CliOptions): Promise<ScrapeResult> {
   }
 
   return scrapeSchema(options.url, {
+    deepRender: options.deepRender,
     renderMode: options.renderMode,
+    timeoutMs: options.timeoutMs,
   });
 }
 
@@ -287,6 +310,8 @@ function buildResolvedAuditReport(extractedData: ScrapeResult): ResolvedAuditRep
     finalUrl: extractedData.finalUrl,
     generatedAt: new Date().toISOString(),
     rawEntitiesForGraphResolver: rawEntities,
+    strictGoogleEntities: graphOutput.strictGoogleEntities as GraphEntity[],
+    strictGoogleDiscardedCount: graphOutput.detectedSyntaxErrors.length,
     entitiesForGraphResolver: entities,
     resolvedEntities: resolvedTreeArray,
     scrapeWarnings: extractedData.warnings ?? [],
@@ -301,6 +326,15 @@ function buildResolvedAuditReport(extractedData: ScrapeResult): ResolvedAuditRep
 function parseFormat(value: string | undefined): ExportFormat {
   if (value === 'json' || value === 'html') return value;
   throw new Error('Invalid --format. Use "json" or "html".');
+}
+
+function parseTimeout(value: string | undefined): number {
+  const timeout = Number.parseInt(value ?? '', 10);
+  if (!Number.isFinite(timeout) || timeout <= 0) {
+    throw new Error('Invalid --timeout. Use a positive millisecond value.');
+  }
+
+  return timeout;
 }
 
 function inferFormatFromOutput(output: string | undefined): ExportFormat | undefined {
@@ -321,7 +355,7 @@ function writeOutputFile(outputPath: string, content: string): void {
   fs.writeFileSync(outputPath, content, 'utf8');
 }
 
-function renderHtmlReport(report: ResolvedAuditReport): string {
+export function renderHtmlReport(report: ResolvedAuditReport): string {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -353,6 +387,18 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
     h1, h2, h3 { margin: 0 0 12px; }
     .meta { color: var(--muted); margin: 4px 0; }
     .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin: 20px 0; }
+    .toggle-container {
+      align-items: center;
+      color: var(--muted);
+      display: inline-flex;
+      font-size: 0.9rem;
+      font-weight: 700;
+      gap: 6px;
+      padding: 7px 4px;
+    }
+    .toggle-container input {
+      accent-color: var(--accent);
+    }
     .export-toolbar {
       align-items: center;
       display: flex;
@@ -381,6 +427,22 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
       border-color: var(--accent);
       border-bottom-color: var(--panel);
       color: var(--accent);
+    }
+    .google-compliance-badge {
+      border-radius: 8px;
+      font-weight: 800;
+      margin: 16px 0 0;
+      padding: 12px 14px;
+    }
+    .google-compliance-badge.valid-syntax {
+      background: #f0fff4;
+      border: 1px solid #bbf7d0;
+      color: #166534;
+    }
+    .google-compliance-badge.invalid-syntax {
+      background: #fff7ed;
+      border: 1px solid #fdba74;
+      color: #9a3412;
     }
     .tab-panel { display: none; }
     .tab-panel.active { display: block; }
@@ -1059,6 +1121,40 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
       font-weight: 700;
       padding: 6px 10px;
     }
+    .dedupe-detail-panel {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      margin: 0 0 24px;
+      padding: 18px;
+    }
+    .dedupe-detail-panel h2 {
+      color: var(--accent);
+      margin-bottom: 12px;
+    }
+    .dedupe-item {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      margin-top: 10px;
+      padding: 12px;
+    }
+    .badge-merged {
+      background: #dcfce7;
+      border: 1px solid #86efac;
+      border-radius: 999px;
+      color: #166534;
+      display: inline-block;
+      font-size: 0.74rem;
+      font-weight: 850;
+      margin-bottom: 8px;
+      padding: 3px 8px;
+      text-transform: uppercase;
+    }
+    .dedupe-item code {
+      overflow-wrap: anywhere;
+      white-space: normal;
+    }
     @keyframes draw-map-edge {
       to { stroke-dashoffset: 0; }
     }
@@ -1121,9 +1217,15 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
   <p class="meta"><strong>URL:</strong> ${escapeHtml(report.url)}</p>
   <p class="meta"><strong>Final URL:</strong> ${escapeHtml(report.finalUrl ?? report.url)}</p>
   <p class="meta"><strong>Generated:</strong> ${escapeHtml(report.generatedAt)}</p>
+  <div class="google-compliance-badge ${report.strictGoogleDiscardedCount > 0 ? 'invalid-syntax' : 'valid-syntax'}">
+    ${report.strictGoogleDiscardedCount > 0
+      ? `Google Strict Parse Error: ${report.strictGoogleDiscardedCount} schema block(s) discarded by native parsers. Open Strict Google Mode to view what Googlebot can parse.`
+      : 'Google Strict Mode: all JSON-LD blocks parsed with native JSON.parse().'}
+  </div>
 
   <nav class="report-tabs" role="tablist" aria-label="Report views">
     <button type="button" class="report-tab active" data-tab="health" role="tab" aria-selected="true">Health Diagnostics</button>
+    <button type="button" class="report-tab" data-tab="strict" role="tab" aria-selected="false">Strict Google Mode</button>
     <button type="button" class="report-tab" data-tab="semantic" role="tab" aria-selected="false">Semantic Graph</button>
     <button type="button" class="report-tab" data-tab="map" role="tab" aria-selected="false">Relationship Map</button>
     <button type="button" class="report-tab" data-tab="layers" role="tab" aria-selected="false">Layered Entity Map</button>
@@ -1131,6 +1233,7 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
 
   <div id="tab-panel-health" class="tab-panel active" role="tabpanel">
     <div id="summary-panel"></div>
+    <div id="duplicate-detail-panel"></div>
     <div id="diagnostic-panel"></div>
     <div id="scrape-warning-panel"></div>
     <div id="quality-panel"></div>
@@ -1147,10 +1250,27 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
     </section>
   </div>
 
+  <div id="tab-panel-strict" class="tab-panel" role="tabpanel">
+    <section>
+      <h2>Strict Google Mode</h2>
+      <p class="meta">Only schema blocks that pass native JSON.parse() are shown here. Recovered blocks are intentionally excluded.</p>
+      <p class="status ${report.strictGoogleDiscardedCount > 0 ? 'warn' : 'ok'}">
+        ${report.strictGoogleDiscardedCount > 0
+          ? `${report.strictGoogleDiscardedCount} schema block(s) discarded by strict parsers.`
+          : 'No strict parser discards detected.'}
+      </p>
+      <pre>${escapeHtml(JSON.stringify(report.strictGoogleEntities, null, 2))}</pre>
+    </section>
+  </div>
+
   <div id="tab-panel-semantic" class="tab-panel" role="tabpanel">
     <div class="toolbar">
       <button type="button" id="expand-all">Expand all</button>
       <button type="button" id="collapse-all">Collapse all</button>
+      <label class="toggle-container">
+        <input type="checkbox" id="toggle-system-keys">
+        <span>Show System Fields (@context / _meta)</span>
+      </label>
     </div>
 
     <section>
@@ -1225,6 +1345,7 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
     const mapZoomState = { value: 1 };
     const mapViewState = { mode: 'full' };
     const mapRenderState = { graph: null, canvas: null, collapsedIds: new Set(), hasDrawn: false };
+    const treeViewState = { showSystemFields: false };
 
     function appendText(parent, className, text) {
       const span = document.createElement('span');
@@ -1268,7 +1389,12 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
     }
 
     function visibleObjectKeys(value) {
-      return Object.keys(value).filter(key => key !== '@context' && key !== '_meta');
+      return Object.keys(value).filter(shouldRenderPropertyKey);
+    }
+
+    function shouldRenderPropertyKey(key) {
+      const hiddenSystemKeys = ['@context', '_meta'];
+      return treeViewState.showSystemFields || !hiddenSystemKeys.includes(key);
     }
 
     function createPrimitiveArrayRow(index, value) {
@@ -2046,6 +2172,50 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
       container.appendChild(panel);
     }
 
+    function renderDuplicateDetails(report, container) {
+      container.textContent = '';
+      const duplicates = collectSchemaIdentities(report.resolvedEntities || [])
+        .filter(item => item.count > 1)
+        .slice(0, 12);
+
+      if (duplicates.length === 0) return;
+
+      const panel = document.createElement('section');
+      panel.className = 'dedupe-detail-panel';
+      const title = document.createElement('h2');
+      title.textContent = 'Duplicate Identity Details';
+      panel.appendChild(title);
+
+      duplicates.forEach(item => {
+        const entry = document.createElement('div');
+        entry.className = 'dedupe-item';
+
+        const badge = document.createElement('span');
+        badge.className = 'badge-merged';
+        badge.textContent = 'Merged Entity';
+        entry.appendChild(badge);
+
+        const summary = document.createElement('p');
+        summary.className = 'meta';
+        summary.appendChild(document.createTextNode('Consolidated ' + item.count + ' nodes matching '));
+        const code = document.createElement('code');
+        code.textContent = item.type + ': ' + item.identity;
+        summary.appendChild(code);
+        entry.appendChild(summary);
+
+        const list = document.createElement('ul');
+        item.paths.slice(0, 8).forEach(path => {
+          const li = document.createElement('li');
+          li.textContent = path;
+          list.appendChild(li);
+        });
+        entry.appendChild(list);
+        panel.appendChild(entry);
+      });
+
+      container.appendChild(panel);
+    }
+
     function renderSummaryCard(card) {
       const element = document.createElement('div');
       element.className = 'summary-card' + (card.tone ? ' ' + card.tone : '');
@@ -2114,10 +2284,10 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
     function collectSchemaIdentities(values) {
       const counts = new Map();
       const visited = new WeakSet();
-      function visit(value) {
+      function visit(value, path) {
         if (!value || typeof value !== 'object') return;
         if (Array.isArray(value)) {
-          value.forEach(visit);
+          value.forEach((item, index) => visit(item, path + '[' + index + ']'));
           return;
         }
         if (visited.has(value)) return;
@@ -2130,15 +2300,17 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
             type: schemaMapType(value),
             identity,
             count: 0,
+            paths: [],
           };
           current.count += 1;
+          current.paths.push(path);
           counts.set(key, current);
         }
 
-        visibleObjectKeys(value).forEach(key => visit(value[key]));
+        visibleObjectKeys(value).forEach(key => visit(value[key], path + '.' + key));
       }
 
-      visit(values);
+      visit(values, 'root');
       return Array.from(counts.values()).sort((a, b) => b.count - a.count);
     }
 
@@ -3189,20 +3361,29 @@ function renderHtmlReport(report: ResolvedAuditReport): string {
       });
     }
 
+    function renderSemanticTreeViews() {
+      renderEntityTree(reportData.primaryRoot, document.getElementById('primary-tree-root'));
+      renderOrphans(reportData.orphanRoots, document.getElementById('orphan-tree-root'));
+      renderResolvedForest(reportData.resolvedEntities, document.getElementById('resolved-forest-root'));
+      renderRawSchemaArray(reportData.rawEntitiesForGraphResolver, document.getElementById('visual-tree-root'));
+    }
+
     renderAuditSummary(reportData, document.getElementById('summary-panel'));
+    renderDuplicateDetails(reportData, document.getElementById('duplicate-detail-panel'));
     renderDiagnostics(reportData.detectedSyntaxErrors, document.getElementById('diagnostic-panel'));
     renderScrapeWarnings(reportData.scrapeWarnings, document.getElementById('scrape-warning-panel'));
     renderQualityWarnings(reportData.qualityWarnings, document.getElementById('quality-panel'));
-    renderEntityTree(reportData.primaryRoot, document.getElementById('primary-tree-root'));
-    renderOrphans(reportData.orphanRoots, document.getElementById('orphan-tree-root'));
-    renderResolvedForest(reportData.resolvedEntities, document.getElementById('resolved-forest-root'));
-    renderRawSchemaArray(reportData.rawEntitiesForGraphResolver, document.getElementById('visual-tree-root'));
+    renderSemanticTreeViews();
     renderDeferredReportTab('health');
     document.querySelectorAll('.report-tab').forEach(tab => {
       tab.addEventListener('click', () => setActiveReportTab(tab.dataset.tab));
     });
     document.getElementById('expand-all').addEventListener('click', () => setCollapsed(false));
     document.getElementById('collapse-all').addEventListener('click', () => setCollapsed(true));
+    document.getElementById('toggle-system-keys').addEventListener('change', event => {
+      treeViewState.showSystemFields = event.target.checked;
+      renderSemanticTreeViews();
+    });
     document.getElementById('schema-map-full').addEventListener('click', () => setSchemaMapMode('full'));
     document.getElementById('schema-map-primary').addEventListener('click', () => setSchemaMapMode('primary'));
     document.getElementById('schema-map-expand-all').addEventListener('click', () => expandAllSchemaMapBranches());

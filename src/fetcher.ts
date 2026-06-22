@@ -23,9 +23,17 @@ export interface FetchResult {
   finalUrl: string;
 }
 
-export async function fetchHtml(url: string): Promise<FetchResult> {
+export interface FetchHtmlOptions {
+  timeoutMs?: number;
+}
+
+export async function fetchHtml(
+  url: string,
+  options: FetchHtmlOptions = {}
+): Promise<FetchResult> {
+  const timeoutMs = options.timeoutMs ?? REQUEST_TIMEOUT_MS;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const response = await fetch(url, {
@@ -57,7 +65,7 @@ export async function fetchHtml(url: string): Promise<FetchResult> {
       finalUrl: response.url || url,
     };
   } catch (error) {
-    throw new Error(`Fetch failed for ${url}: ${fetchErrorMessage(error)}`, {
+    throw new Error(`Fetch failed for ${url}: ${fetchErrorMessage(error, timeoutMs)}`, {
       cause: error,
     });
   } finally {
@@ -107,7 +115,7 @@ function isAcceptedContentType(contentType: string): boolean {
   return ACCEPTED_CONTENT_TYPES.some(type => normalized.includes(type));
 }
 
-function fetchErrorMessage(error: unknown): string {
+function fetchErrorMessage(error: unknown, timeoutMs = REQUEST_TIMEOUT_MS): string {
   if (!error || typeof error !== 'object') {
     return String(error);
   }
@@ -122,7 +130,7 @@ function fetchErrorMessage(error: unknown): string {
   };
 
   if (err.name === 'AbortError') {
-    return `request timed out after ${REQUEST_TIMEOUT_MS}ms`;
+    return `request timed out after ${timeoutMs}ms`;
   }
 
   const cause = err.cause;

@@ -13,7 +13,9 @@ export type ScrapeSourceMode = 'static' | 'rendered';
 export type ScrapeRenderMode = ScrapeSourceMode | 'dual-pass';
 
 export interface ScrapeOptions {
+  deepRender?: boolean;
   renderMode?: ScrapeRenderMode;
+  timeoutMs?: number;
 }
 
 export interface RawSchemaBlock {
@@ -39,14 +41,14 @@ export async function scrapeSchema(
   options: ScrapeOptions = {}
 ): Promise<ScrapeResult> {
   if (options.renderMode === 'rendered') {
-    return scrapeRenderedSchema(url);
+    return scrapeRenderedSchema(url, options);
   }
 
   if (options.renderMode === 'dual-pass') {
-    return scrapeSchemaDualPass(url);
+    return scrapeSchemaDualPass(url, options);
   }
 
-  const fetched = await fetchHtml(url);
+  const fetched = await fetchHtml(url, { timeoutMs: options.timeoutMs });
 
   return {
     url,
@@ -55,8 +57,14 @@ export async function scrapeSchema(
   };
 }
 
-export async function scrapeRenderedSchema(url: string): Promise<ScrapeResult> {
-  const fetched = await fetchRenderedHtml(url);
+export async function scrapeRenderedSchema(
+  url: string,
+  options: ScrapeOptions = {}
+): Promise<ScrapeResult> {
+  const fetched = await fetchRenderedHtml(url, {
+    deepRender: options.deepRender,
+    timeoutMs: options.timeoutMs,
+  });
 
   return {
     url,
@@ -89,12 +97,18 @@ export function scrapeJsonLdInput(
   };
 }
 
-export async function scrapeSchemaDualPass(url: string): Promise<ScrapeResult> {
-  const staticFetched = await fetchHtml(url);
+export async function scrapeSchemaDualPass(
+  url: string,
+  options: ScrapeOptions = {}
+): Promise<ScrapeResult> {
+  const staticFetched = await fetchHtml(url, { timeoutMs: options.timeoutMs });
   const staticSchemas = extractSchemasFromHtml(staticFetched.html, 'static');
 
   try {
-    const renderedFetched = await fetchRenderedHtml(url);
+    const renderedFetched = await fetchRenderedHtml(url, {
+      deepRender: options.deepRender,
+      timeoutMs: options.timeoutMs,
+    });
     const renderedSchemas = filterRenderedDuplicates(
       staticSchemas,
       extractSchemasFromHtml(renderedFetched.html, 'rendered')

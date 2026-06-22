@@ -15,6 +15,7 @@ type JsonObject = Record<string, unknown>;
 export interface AuditActionResult {
   entitiesForGraphResolver: JsonObject[];
   detectedSyntaxErrors: SyntaxErrorDetail[];
+  strictGoogleEntities: JsonObject[];
 }
 
 export interface GraphResolutionHealthReport {
@@ -35,6 +36,7 @@ export async function auditUrl(url: string): Promise<AuditActionResult> {
 
 export function processRawPayload(rawPayload: ScrapeResult | any): AuditActionResult {
   const unifiedEntities: JsonObject[] = [];
+  const strictGoogleEntities: JsonObject[] = [];
   const syntaxErrors: SyntaxErrorDetail[] = [];
 
   for (const item of rawPayload?.schemas ?? []) {
@@ -47,6 +49,9 @@ export function processRawPayload(rawPayload: ScrapeResult | any): AuditActionRe
 
       unifiedEntities.push(
         ...withDiscoveryMeta(entitiesFromParsedJsonLd(audit.parsedData), item)
+      );
+      strictGoogleEntities.push(
+        ...withDiscoveryMeta(entitiesFromStrictJsonLdItem(item), item)
       );
       continue;
     }
@@ -62,6 +67,10 @@ export function processRawPayload(rawPayload: ScrapeResult | any): AuditActionRe
       rawPayload?.finalUrl ?? rawPayload?.url
     ),
     detectedSyntaxErrors: syntaxErrors,
+    strictGoogleEntities: canonicalizeSchemaUrls(
+      strictGoogleEntities,
+      rawPayload?.finalUrl ?? rawPayload?.url
+    ),
   };
 }
 
@@ -151,6 +160,20 @@ function entitiesFromParsedJsonLd(parsedData: unknown): JsonObject[] {
   }
 
   return [parsedData];
+}
+
+function entitiesFromStrictJsonLdItem(item: any): JsonObject[] {
+  if (typeof item.raw !== 'string') {
+    return item.syntaxStatus === 'valid'
+      ? entitiesFromParsedJsonLd(item.data)
+      : [];
+  }
+
+  try {
+    return entitiesFromParsedJsonLd(JSON.parse(item.raw.trim()));
+  } catch {
+    return [];
+  }
 }
 
 function entitiesFromAstItem(item: any): JsonObject[] {
