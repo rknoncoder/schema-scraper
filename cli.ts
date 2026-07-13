@@ -9,6 +9,7 @@ import {
   TextReporter,
   verifyGraphResolutionHealth,
   type AuditActionResult,
+  type GoogleAuditResult,
   type GraphResolutionHealthReport,
   type QualityWarning,
   type ScrapeResult,
@@ -20,6 +21,7 @@ import {
   resolveGraph,
   selectBestRootIndex,
   selectUnlinkedRootEntities,
+  auditGoogleEligibility,
   type GraphEntity,
 } from './src';
 import chalk from 'chalk';
@@ -32,6 +34,7 @@ interface CliOptions {
   deepRender: boolean;
   format?: ExportFormat;
   graphReady: boolean;
+  googleRichResults: boolean;
   jsonLd?: string;
   jsonLdFile?: string;
   output?: string;
@@ -56,6 +59,7 @@ export interface ResolvedAuditReport {
   primaryRoot: GraphEntity | null;
   orphanRoots: GraphEntity[];
   health: GraphResolutionHealthReport | null;
+  googleRichResults?: GoogleAuditResult[];
 }
 
 async function main(argv = process.argv): Promise<void> {
@@ -71,7 +75,9 @@ async function main(argv = process.argv): Promise<void> {
     const extractedData = await loadScrapeInput(options);
 
     if (options.output || options.format) {
-      const report = buildResolvedAuditReport(extractedData);
+      const report = buildResolvedAuditReport(extractedData, {
+        includeGoogleRichResults: options.googleRichResults,
+      });
       const format = options.format ?? inferFormatFromOutput(options.output) ?? 'json';
       const content = format === 'html'
         ? renderHtmlReport(report)
@@ -116,9 +122,7 @@ async function main(argv = process.argv): Promise<void> {
       return;
     }
 
-    const output = options.graphReady
-      ? processRawPayload(extractedData)
-      : extractedData;
+    const output = buildStdoutPayload(extractedData, options);
 
     console.log(JSON.stringify(output, null, options.compact ? 0 : 2));
   } catch (error) {
@@ -132,6 +136,7 @@ function parseArgs(args: string[]): CliOptions {
     compact: false,
     deepRender: false,
     graphReady: false,
+    googleRichResults: false,
     stdin: false,
     tree: false,
   };
@@ -146,6 +151,11 @@ function parseArgs(args: string[]): CliOptions {
 
     if (arg === '--graph-ready') {
       options.graphReady = true;
+      continue;
+    }
+
+    if (arg === '--google-rich-results') {
+      options.googleRichResults = true;
       continue;
     }
 
@@ -285,7 +295,14 @@ function hasJsonLdInput(options: CliOptions): boolean {
   return Boolean(options.jsonLdFile || options.jsonLd || options.stdin);
 }
 
-function buildResolvedAuditReport(extractedData: ScrapeResult): ResolvedAuditReport {
+interface BuildResolvedAuditReportOptions {
+  includeGoogleRichResults?: boolean;
+}
+
+function buildResolvedAuditReport(
+  extractedData: ScrapeResult,
+  options: BuildResolvedAuditReportOptions = {}
+): ResolvedAuditReport {
   const graphOutput = processRawPayload(extractedData);
   const rawEntities = graphOutput.entitiesForGraphResolver as GraphEntity[];
   const entities = consolidateGraphEntities(
@@ -305,7 +322,7 @@ function buildResolvedAuditReport(extractedData: ScrapeResult): ResolvedAuditRep
     : null;
   const qualityWarnings = auditSchemaQuality(entities);
 
-  return {
+  const report: ResolvedAuditReport = {
     url: extractedData.url,
     finalUrl: extractedData.finalUrl,
     generatedAt: new Date().toISOString(),
@@ -320,6 +337,33 @@ function buildResolvedAuditReport(extractedData: ScrapeResult): ResolvedAuditRep
     primaryRoot,
     orphanRoots,
     health,
+  };
+
+  if (options.includeGoogleRichResults) {
+    report.googleRichResults = auditGoogleEligibility(resolvedTreeArray);
+  }
+
+  return report;
+}
+
+function buildStdoutPayload(
+  extractedData: ScrapeResult,
+  options: CliOptions
+): ScrapeResult | AuditActionResult | (Record<string, unknown> & { googleRichResults: GoogleAuditResult[] }) {
+  if (!options.googleRichResults) {
+    return options.graphReady
+      ? processRawPayload(extractedData)
+      : extractedData;
+  }
+
+  const report = buildResolvedAuditReport(extractedData, { includeGoogleRichResults: true });
+  const basePayload = options.graphReady
+    ? processRawPayload(extractedData)
+    : extractedData;
+
+  return {
+    ...basePayload,
+    googleRichResults: report.googleRichResults ?? [],
   };
 }
 
@@ -353,6 +397,55 @@ function writeOutputFile(outputPath: string, content: string): void {
   }
 
   fs.writeFileSync(outputPath, content, 'utf8');
+}
+
+function renderGoogleRichResultsPanel(results: GoogleAuditResult[]): string {
+  const notices = Array.from(new Set(
+    results
+      .map(result => result.notice)
+      .filter((notice): notice is string => Boolean(notice))
+  ));
+  const rows = results.map(result => `
+      <tr>
+        <td><strong>${escapeHtml(result.type)}</strong></td>
+        <td>${escapeHtml(result.entityId ?? 'Unknown entity')}</td>
+        <td><span class="rich-status rich-status-${result.status.toLowerCase()}">${escapeHtml(result.status)}</span></td>
+        <td>${renderGoogleRichResultIssues(result)}</td>
+      </tr>`).join('');
+
+  return `
+  <div id="tab-panel-google-rich" class="tab-panel" role="tabpanel">
+    <section>
+      <h2>Google Rich Results</h2>
+      <p class="meta">Eligibility audit based on supported Google rich result fields. This is a local preflight check, not a replacement for Google's live Rich Results Test.</p>
+      ${notices.map(notice => `<div class="rich-deprecation-notice">${escapeHtml(notice)}</div>`).join('')}
+      ${results.length > 0
+        ? `<table class="google-rich-table">
+            <thead>
+              <tr>
+                <th>Entity Type</th>
+                <th>Entity</th>
+                <th>Status</th>
+                <th>Issues</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>`
+        : '<p class="meta">No supported Google rich result entity types were found in the resolved graph.</p>'}
+    </section>
+  </div>`;
+}
+
+function renderGoogleRichResultIssues(result: GoogleAuditResult): string {
+  if (result.issues.length === 0) {
+    return '<span class="status ok">No local eligibility issues found.</span>';
+  }
+
+  return `<ul class="rich-issue-list">${result.issues.map(issue => `
+    <li class="rich-issue-${issue.severity}">
+      <strong>${escapeHtml(issue.severity.toUpperCase())}</strong>
+      ${escapeHtml(issue.property)}: ${escapeHtml(issue.message)}
+    </li>`).join('')}</ul>`;
 }
 
 export function renderHtmlReport(report: ResolvedAuditReport): string {
@@ -1210,6 +1303,76 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
       font-weight: 600;
       margin-top: 4px;
     }
+    .google-rich-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 16px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+    .google-rich-table th,
+    .google-rich-table td {
+      border-bottom: 1px solid var(--border);
+      padding: 12px;
+      text-align: left;
+      vertical-align: top;
+    }
+    .google-rich-table th {
+      background: #f8fafc;
+      color: var(--muted);
+      font-size: 0.78rem;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+    }
+    .google-rich-table tr:last-child td {
+      border-bottom: 0;
+    }
+    .rich-status {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      padding: 4px 9px;
+      white-space: nowrap;
+    }
+    .rich-status-eligible {
+      background: #dcfce7;
+      color: #166534;
+    }
+    .rich-status-ineligible {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+    .rich-status-deprecated {
+      background: #fef3c7;
+      color: #92400e;
+    }
+    .rich-issue-list {
+      margin: 0;
+      padding-left: 18px;
+    }
+    .rich-issue-list li {
+      margin: 0 0 6px;
+    }
+    .rich-issue-error {
+      color: #991b1b;
+      font-weight: 600;
+    }
+    .rich-issue-warning {
+      color: #92400e;
+    }
+    .rich-deprecation-notice {
+      background: #fff7ed;
+      border: 1px solid #fed7aa;
+      border-left: 4px solid #f97316;
+      border-radius: 8px;
+      color: #9a3412;
+      margin: 0 0 12px;
+      padding: 10px 12px;
+      font-weight: 600;
+    }
   </style>
 </head>
 <body>
@@ -1226,6 +1389,7 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
   <nav class="report-tabs" role="tablist" aria-label="Report views">
     <button type="button" class="report-tab active" data-tab="health" role="tab" aria-selected="true">Health Diagnostics</button>
     <button type="button" class="report-tab" data-tab="strict" role="tab" aria-selected="false">Strict Google Mode</button>
+    ${report.googleRichResults ? '<button type="button" class="report-tab" data-tab="google-rich" role="tab" aria-selected="false">Google Rich Results</button>' : ''}
     <button type="button" class="report-tab" data-tab="semantic" role="tab" aria-selected="false">Semantic Graph</button>
     <button type="button" class="report-tab" data-tab="map" role="tab" aria-selected="false">Relationship Map</button>
     <button type="button" class="report-tab" data-tab="layers" role="tab" aria-selected="false">Layered Entity Map</button>
@@ -1262,6 +1426,8 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
       <pre>${escapeHtml(JSON.stringify(report.strictGoogleEntities, null, 2))}</pre>
     </section>
   </div>
+
+  ${report.googleRichResults ? renderGoogleRichResultsPanel(report.googleRichResults) : ''}
 
   <div id="tab-panel-semantic" class="tab-panel" role="tabpanel">
     <div class="toolbar">

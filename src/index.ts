@@ -50,6 +50,10 @@ export {
   homogenizeSchemaFormat,
 } from './analyzer/formatHomogenizer';
 export { auditSchemaQuality } from './analyzer/schemaQuality';
+export {
+  auditGoogleEligibility,
+  GOOGLE_RULES,
+} from './analyzer/googleRichResultValidator';
 export { validateAndParseJSON } from './analyzer/syntaxValidator';
 export {
   canonicalizeSchemaUrls,
@@ -64,3 +68,9 @@ export type {
   ValidationReport,
 } from './analyzer/syntaxValidator';
 export type { QualityWarning } from './analyzer/schemaQuality';
+export type {
+  GoogleAuditResult,
+  GoogleRuleIssue,
+  RichResultDefinition,
+  Severity,
+} from './analyzer/googleRichResultValidator';
