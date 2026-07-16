@@ -5,3 +5,9 @@ coverage/
 report
 report*.html
 errors*.html
+
+# Generated schema audit artifacts
+/reports-*/
+/*.html
+*.jsonld
+optimized-schema.jsonld
