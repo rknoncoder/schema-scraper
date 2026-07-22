@@ -12,6 +12,9 @@ export interface ExtractedSchema {
   parseError?: string;
   syntaxStatus?: ValidationReport['status'];
   syntaxError?: SyntaxErrorDetail;
+  jsonLdBlockIndex?: number;
+  jsonLdTypes?: string[];
+  jsonLdEntityCount?: number;
 }
 
 export function extractAll(html: string): ExtractedSchema[] {
@@ -22,6 +25,9 @@ export function extractAll(html: string): ExtractedSchema[] {
     parseError: block.parseError,
     syntaxStatus: block.syntaxStatus,
     syntaxError: block.syntaxError,
+    jsonLdBlockIndex: block.index,
+    jsonLdTypes: block.types,
+    jsonLdEntityCount: block.entityCount,
   }));
 
   const microdataSchemas: ExtractedSchema[] = extractMicrodata(html).map(data => ({

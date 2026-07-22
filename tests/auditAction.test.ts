@@ -26,6 +26,7 @@ describe('audit action orchestration', () => {
     expect(result.detectedSyntaxErrors).toHaveLength(1);
     expect(result.detectedSyntaxErrors[0]).toMatchObject({
       type: 'TRAILING_COMMA',
+      jsonLdBlockIndex: 1,
     });
     expect(result.entitiesForGraphResolver).toEqual([
       {

@@ -1,5 +1,6 @@
 export {
   extractSchemasFromHtml,
+  compareStaticRenderedSchemas,
   scrapeJsonLdInput,
   scrapeSchema,
   scrapeSchemaDualPass,
@@ -11,6 +12,8 @@ export {
   verifyGraphResolutionHealth,
 } from './commands/auditAction';
 export { TextReporter } from './reporter/textReporter';
+export { renderHtmlReport } from './reporter/htmlReport';
+export type { ResolvedAuditReport } from './reporter/htmlReport';
 export {
   buildGraphEntityMap,
   consolidateGraphEntities,
@@ -22,10 +25,14 @@ export {
 } from './tree/graphResolver';
 export type {
   RawSchemaBlock,
+  JsonLdBlockDiagnostic,
+  JsonLdDiagnostics,
+  SchemaDiffEntry,
   ScrapeOptions,
   ScrapeRenderMode,
   ScrapeResult,
   ScrapeSourceMode,
+  StaticRenderedSchemaDiff,
 } from './scraper';
 export type {
   AuditActionResult,

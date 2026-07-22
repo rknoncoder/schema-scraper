@@ -5,6 +5,8 @@ export interface SyntaxErrorDetail {
   message: string;
   snippet: string;
   suggestedFix: string;
+  jsonLdBlockIndex?: number;
+  sourceMode?: 'static' | 'rendered';
 }
 
 export interface ValidationReport {

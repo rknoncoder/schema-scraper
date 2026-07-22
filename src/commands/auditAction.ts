@@ -16,6 +16,7 @@ export interface AuditActionResult {
   entitiesForGraphResolver: JsonObject[];
   detectedSyntaxErrors: SyntaxErrorDetail[];
   strictGoogleEntities: JsonObject[];
+  jsonLdDiagnostics?: ScrapeResult['jsonLdDiagnostics'];
 }
 
 export interface GraphResolutionHealthReport {
@@ -44,7 +45,11 @@ export function processRawPayload(rawPayload: ScrapeResult | any): AuditActionRe
       const audit = parseJsonLdItem(item);
 
       if (audit.error) {
-        syntaxErrors.push(audit.error);
+        syntaxErrors.push({
+          ...audit.error,
+          jsonLdBlockIndex: item.jsonLdBlockIndex,
+          sourceMode: item.sourceMode,
+        });
       }
 
       unifiedEntities.push(
@@ -71,6 +76,7 @@ export function processRawPayload(rawPayload: ScrapeResult | any): AuditActionRe
       strictGoogleEntities,
       rawPayload?.finalUrl ?? rawPayload?.url
     ),
+    jsonLdDiagnostics: rawPayload?.jsonLdDiagnostics,
   };
 }
 

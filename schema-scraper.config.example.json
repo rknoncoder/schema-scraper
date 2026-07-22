@@ -1,0 +1,10 @@
+{
+  "urlFile": "urls.txt",
+  "renderMode": "dual-pass",
+  "deepRender": true,
+  "timeoutMs": 60000,
+  "googleRichResults": true,
+  "format": "html",
+  "outputDir": "reports",
+  "concurrency": 2
+}

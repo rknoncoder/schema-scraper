@@ -1,6 +1,6 @@
 import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
-import { renderHtmlReport, type ResolvedAuditReport } from '../cli';
+import { renderHtmlReport, type ResolvedAuditReport } from '../src/reporter/htmlReport';
 
 function sampleReport(): ResolvedAuditReport {
   return {
@@ -31,6 +31,20 @@ function sampleReport(): ResolvedAuditReport {
       brokenLinks: [],
       status: 'success',
     },
+    jsonLdDiagnostics: {
+      jsonLdBlockCount: 1,
+      blocks: [
+        {
+          index: 1,
+          sourceMode: 'static',
+          valid: true,
+          syntaxStatus: 'valid',
+          types: ['Product'],
+          entityCount: 1,
+          rawLength: 72,
+        },
+      ],
+    },
   };
 }
 
@@ -43,6 +57,9 @@ describe('HTML report helpers', () => {
     expect(script).toContain('function ensureSchemaMapReady()');
     expect(script).toContain('if (!ensureSchemaMapReady()) return;');
     expect(html).toContain('id="toggle-system-keys"');
+    expect(html).toContain('JSON-LD Script Blocks');
+    expect(html).toContain('Blocks Detected');
+    expect(html).toContain('Static vs Rendered Diff');
     expect(script).toContain('treeViewState.showSystemFields');
     expect(() => new vm.Script(script ?? '')).not.toThrow();
   });

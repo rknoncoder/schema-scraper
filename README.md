@@ -110,6 +110,52 @@ for additional lazy content before extraction:
 npm run cli -- --url "https://example.com" --dual-pass --deep-render --timeout 90000
 ```
 
+## Batch URL Audits
+
+Audit a list of URLs from a file and write one report per URL:
+
+```bash
+npm run cli -- --url-file urls.txt --dual-pass --deep-render --timeout 60000 --google-rich-results --format html --output-dir reports
+```
+
+URL files support one URL per line. Blank lines and lines starting with `#` are
+ignored. Batch mode also writes:
+
+- `batch-report.json` with per-URL status and output paths
+- `failed-urls.txt` when any URL fails
+
+Use `--concurrency <count>` to process more than one URL at a time:
+
+```bash
+npm run cli -- --url-file urls.txt --output-dir reports --concurrency 2
+```
+
+## Config Files
+
+Pass a JSON config file with `--config`:
+
+```bash
+npm run cli -- --config schema-scraper.config.json
+```
+
+If `schema-scraper.config.json` exists in the repository root, the CLI loads it
+automatically. Command-line flags override config values.
+
+Example:
+
+```json
+{
+  "urlFile": "urls.txt",
+  "renderMode": "dual-pass",
+  "deepRender": true,
+  "timeoutMs": 60000,
+  "googleRichResults": true,
+  "format": "html",
+  "outputDir": "reports",
+  "concurrency": 2
+}
+```
+
 ## Raw JSON-LD Inputs
 
 Analyze a local JSON-LD file without fetching a URL:
@@ -184,6 +230,8 @@ npm run cli -- --url "https://example.com" --dual-pass --format html -o report.h
 The HTML report provides:
 
 - schema counts, duplicate identity groups, scrape warnings, and graph health
+- JSON-LD script block counts with per-block type/entity diagnostics
+- static vs rendered source differences for dual-pass audits
 - syntax errors and semantic sanity warnings
 - Strict Google Mode containing only JSON-LD accepted by native `JSON.parse`
 - an optional Google Rich Results eligibility tab when `--google-rich-results`
@@ -194,6 +242,10 @@ The HTML report provides:
 - a collapsible, zoomable relationship map with mouse-wheel zoom and panning
 - a layered semantic DAG with shared identity hubs and metadata-leaf pruning
 - ItemList position-gap warnings and metadata leaf previews
+
+When multiple JSON-LD script blocks are detected, the report includes an
+informational note to check that related entities are connected with stable
+`@id` references and do not conflict across blocks.
 
 Large graph views are rendered when their tabs are opened to reduce initial
 browser work.
@@ -237,11 +289,15 @@ final Search validation.
 | Option | Purpose |
 | --- | --- |
 | `--url <url>` | Fetch schema from a web page |
+| `--url-file <path>` | Batch audit URLs from a newline-delimited file |
 | `--static` | Use only the server HTML response |
 | `--rendered` | Use only the JavaScript-rendered DOM |
 | `--dual-pass` | Combine static and rendered extraction |
 | `--deep-render` | Scroll and wait for lazy content in browser modes |
 | `--timeout <ms>` | Set the fetch or navigation timeout |
+| `--config <path>` | Load CLI defaults from a JSON config file |
+| `--output-dir <path>` | Write batch report files to a directory |
+| `--concurrency <count>` | Set batch URL concurrency |
 | `--jsonld-file <path>` | Read JSON-LD from a local file |
 | `--input <path>` | Alias for `--jsonld-file` |
 | `--jsonld <code>` | Read inline JSON-LD |

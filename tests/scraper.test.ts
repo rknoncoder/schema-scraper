@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extractSchemasFromHtml, scrapeJsonLdInput } from '../src';
+import { compareStaticRenderedSchemas, extractSchemasFromHtml, scrapeJsonLdInput } from '../src';
 
 describe('schema scraper', () => {
   it('returns raw JSON-LD data and a matching source tree', () => {
@@ -69,6 +69,19 @@ describe('schema scraper', () => {
     expect(result).toMatchObject({
       url: 'file://schema.json',
       finalUrl: 'file://schema.json',
+      jsonLdDiagnostics: {
+        jsonLdBlockCount: 1,
+        blocks: [
+          {
+            index: 1,
+            sourceMode: 'static',
+            valid: true,
+            syntaxStatus: 'valid',
+            types: ['Product'],
+            entityCount: 1,
+          },
+        ],
+      },
       schemas: [
         {
           source: 'json-ld',
@@ -81,5 +94,81 @@ describe('schema scraper', () => {
         },
       ],
     });
+  });
+
+  it('adds per-block JSON-LD diagnostics with type breakdowns and errors', () => {
+    const schemas = extractSchemasFromHtml(`
+      <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@graph": [
+            { "@type": "Product", "name": "Graph Product" },
+            { "@type": "Organization", "name": "Graph Org" }
+          ]
+        }
+      </script>
+      <script type="application/ld+json">
+        { "@context": "https://schema.org", "@type": }
+      </script>
+    `, 'static');
+
+    expect(schemas).toHaveLength(2);
+    expect(schemas[0]).toMatchObject({
+      source: 'json-ld',
+      jsonLdBlockIndex: 1,
+      jsonLdTypes: ['Product', 'Organization'],
+      jsonLdEntityCount: 2,
+    });
+    expect(schemas[1]).toMatchObject({
+      source: 'json-ld',
+      jsonLdBlockIndex: 2,
+      jsonLdTypes: [],
+      jsonLdEntityCount: 0,
+      syntaxStatus: 'critical',
+    });
+  });
+
+  it('summarizes static vs rendered schema differences', () => {
+    const staticSchemas = extractSchemasFromHtml(`
+      <script type="application/ld+json">
+        { "@context": "https://schema.org", "@type": "Product", "@id": "#product", "name": "Static Product" }
+      </script>
+      <script type="application/ld+json">
+        { "@context": "https://schema.org", "@type": "Organization", "name": "Server Org" }
+      </script>
+    `, 'static');
+    const renderedSchemas = extractSchemasFromHtml(`
+      <script type="application/ld+json">
+        { "@context": "https://schema.org", "@type": "Product", "@id": "#product", "name": "Static Product" }
+      </script>
+      <script type="application/ld+json">
+        { "@context": "https://schema.org", "@type": "VideoObject", "name": "Rendered Video" }
+      </script>
+    `, 'rendered');
+
+    const diff = compareStaticRenderedSchemas(staticSchemas, renderedSchemas);
+
+    expect(diff.both).toMatchObject([
+      {
+        source: 'json-ld',
+        types: ['Product'],
+        id: '#product',
+        name: 'Static Product',
+      },
+    ]);
+    expect(diff.staticOnly).toMatchObject([
+      {
+        source: 'json-ld',
+        types: ['Organization'],
+        name: 'Server Org',
+      },
+    ]);
+    expect(diff.renderedOnly).toMatchObject([
+      {
+        source: 'json-ld',
+        types: ['VideoObject'],
+        name: 'Rendered Video',
+      },
+    ]);
   });
 });
