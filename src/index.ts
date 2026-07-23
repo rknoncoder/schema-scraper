@@ -14,6 +14,15 @@ export {
 export { TextReporter } from './reporter/textReporter';
 export { renderHtmlReport } from './reporter/htmlReport';
 export type { ResolvedAuditReport } from './reporter/htmlReport';
+export { buildRawJsonLdBlockMap } from './reporter/rawJsonLdBlockMap';
+export type {
+  RawJsonLdBlockMap,
+  RawJsonLdBlockMapSummary,
+  RawJsonLdMapLink,
+  RawJsonLdMapNode,
+  RawJsonLdMapNodeKind,
+  RawJsonLdMapStatus,
+} from './reporter/rawJsonLdBlockMap';
 export {
   buildGraphEntityMap,
   consolidateGraphEntities,

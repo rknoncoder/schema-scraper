@@ -33,6 +33,8 @@ function sampleReport(): ResolvedAuditReport {
     },
     jsonLdDiagnostics: {
       jsonLdBlockCount: 1,
+      typedSchemaBlockCount: 1,
+      untypedJsonLdBlockCount: 0,
       blocks: [
         {
           index: 1,
@@ -44,6 +46,37 @@ function sampleReport(): ResolvedAuditReport {
           rawLength: 72,
         },
       ],
+    },
+    rawJsonLdBlockMap: {
+      nodes: [
+        {
+          id: 'raw-block-1',
+          label: 'Block #1: Product',
+          type: 'Product',
+          kind: 'block',
+          status: 'ok',
+          blockIndex: 1,
+          sourceMode: 'static',
+          path: 'Block #1',
+          badges: [],
+          details: [{ key: 'block', value: '#1' }],
+        },
+      ],
+      links: [],
+      summary: {
+        blockCount: 1,
+        typedBlockCount: 1,
+        untypedBlockCount: 0,
+        isolatedBlockCount: 1,
+        noCrossBlockIdLinkBlockCount: 1,
+        nestedTypedSchemaNodeCount: 0,
+        internalParentChildLinkCount: 0,
+        analyticsPayloadBlockCount: 0,
+        crossBlockReferenceCount: 0,
+        orphanReferenceCount: 0,
+        parseErrorBlockCount: 0,
+        truncated: false,
+      },
     },
   };
 }
@@ -58,8 +91,16 @@ describe('HTML report helpers', () => {
     expect(script).toContain('if (!ensureSchemaMapReady()) return;');
     expect(html).toContain('id="toggle-system-keys"');
     expect(html).toContain('JSON-LD Script Blocks');
-    expect(html).toContain('Blocks Detected');
+    expect(html).toContain('Typed JSON-LD Script Blocks');
+    expect(html).toContain('Untyped JSON-LD / Data Payload Blocks');
+    expect(html).toContain('Resolved Entity Graph');
+    expect(html).toContain('Raw Script Block Map');
+    expect(html).toContain('Download PNG');
     expect(html).toContain('Static vs Rendered Diff');
+    expect(script).toContain('function downloadCurrentSchemaMapPng()');
+    expect(script).toContain('function prepareSchemaMapSvgForPngExport(svg)');
+    expect(script).toContain('function isAnalyticsDataPayload(value)');
+    expect(script).toContain('const scale = 2;');
     expect(script).toContain('treeViewState.showSystemFields');
     expect(() => new vm.Script(script ?? '')).not.toThrow();
   });

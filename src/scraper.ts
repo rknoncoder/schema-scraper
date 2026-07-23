@@ -46,6 +46,8 @@ export interface JsonLdBlockDiagnostic {
 
 export interface JsonLdDiagnostics {
   jsonLdBlockCount: number;
+  typedSchemaBlockCount: number;
+  untypedJsonLdBlockCount: number;
   blocks: JsonLdBlockDiagnostic[];
   note?: string;
 }
@@ -262,9 +264,12 @@ export function buildJsonLdDiagnostics(
       parseError: schema.parseError,
       syntaxError: schema.syntaxError,
     }));
+  const typedSchemaBlockCount = blocks.filter(block => block.types.length > 0).length;
 
   return {
     jsonLdBlockCount: blocks.length,
+    typedSchemaBlockCount,
+    untypedJsonLdBlockCount: blocks.length - typedSchemaBlockCount,
     blocks,
     note: blocks.length > 1
       ? 'Multiple JSON-LD script blocks detected. Ensure entities across separate blocks do not conflict and are connected using @id references where applicable.'

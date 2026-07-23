@@ -23,6 +23,7 @@ import {
   type GraphEntity,
 } from './src';
 import { renderHtmlReport, type ResolvedAuditReport } from './src/reporter/htmlReport';
+import { buildRawJsonLdBlockMap } from './src/reporter/rawJsonLdBlockMap';
 import chalk from 'chalk';
 
 export { renderHtmlReport, type ResolvedAuditReport };
@@ -649,6 +650,7 @@ function buildResolvedAuditReport(
     health,
     staticRenderedDiff: extractedData.staticRenderedDiff ?? null,
     jsonLdDiagnostics: extractedData.jsonLdDiagnostics,
+    rawJsonLdBlockMap: buildRawJsonLdBlockMap(extractedData.schemas),
   };
 
   if (options.includeGoogleRichResults) {

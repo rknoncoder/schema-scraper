@@ -1,6 +1,7 @@
 import type { AuditActionResult, GraphResolutionHealthReport } from '../commands/auditAction';
 import type { GoogleAuditResult } from '../analyzer/googleRichResultValidator';
 import type { QualityWarning } from '../analyzer/schemaQuality';
+import type { RawJsonLdBlockMap } from './rawJsonLdBlockMap';
 import type { JsonLdDiagnostics, StaticRenderedSchemaDiff } from '../scraper';
 import type { GraphEntity } from '../tree/graphResolver';
 
@@ -21,6 +22,7 @@ export interface ResolvedAuditReport {
   health: GraphResolutionHealthReport | null;
   staticRenderedDiff?: StaticRenderedSchemaDiff | null;
   jsonLdDiagnostics?: JsonLdDiagnostics | null;
+  rawJsonLdBlockMap?: RawJsonLdBlockMap | null;
   googleRichResults?: GoogleAuditResult[];
 }
 function renderGoogleRichResultsPanel(results: GoogleAuditResult[]): string {
@@ -95,7 +97,9 @@ function renderJsonLdDiagnosticsPanel(diagnostics?: JsonLdDiagnostics | null): s
   return `
     <section>
       <h2>JSON-LD Script Blocks</h2>
-      <p class="meta"><strong>Blocks Detected:</strong> ${diagnostics.jsonLdBlockCount}</p>
+      <p class="meta"><strong>JSON-LD Script Blocks:</strong> ${diagnostics.jsonLdBlockCount}</p>
+      <p class="meta"><strong>Typed JSON-LD Script Blocks:</strong> ${diagnostics.typedSchemaBlockCount}</p>
+      <p class="meta"><strong>Untyped JSON-LD / Data Payload Blocks:</strong> ${diagnostics.untypedJsonLdBlockCount}</p>
       ${diagnostics.note ? `<div class="rich-deprecation-notice">${escapeHtml(diagnostics.note)}</div>` : ''}
       ${diagnostics.blocks.length > 0
         ? `<table class="google-rich-table">
@@ -359,7 +363,8 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
       gap: 8px;
       margin: 14px 0;
     }
-    .map-mode.active {
+    .map-mode.active,
+    .map-view-mode.active {
       border-color: var(--accent);
       color: var(--accent);
       font-weight: 800;
@@ -422,10 +427,25 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
     .schema-link-map .map-edge {
       fill: none;
       stroke: #8ec5e8;
-      stroke-width: 1.6;
+      stroke-width: 1.1;
       stroke-dasharray: 420;
       stroke-dashoffset: 420;
       animation: draw-map-edge 520ms ease-out forwards;
+    }
+    .schema-link-map .map-edge.edge-cross-block-reference,
+    .schema-link-map .map-edge.edge-warning {
+      animation: none;
+      stroke: #f59e0b;
+      stroke-width: 1.2;
+      stroke-dasharray: 8 7;
+      stroke-dashoffset: 0;
+    }
+    .schema-link-map .map-edge.edge-error {
+      animation: none;
+      stroke: #dc2626;
+      stroke-width: 1.2;
+      stroke-dasharray: 4 5;
+      stroke-dashoffset: 0;
     }
     .schema-link-map .map-edge-label {
       fill: #64748b;
@@ -454,6 +474,14 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
       stroke: #f59e0b;
       stroke-width: 5;
     }
+    .schema-link-map .map-node.node-warning circle {
+      stroke: #f59e0b;
+      stroke-width: 5;
+    }
+    .schema-link-map .map-node.node-error circle {
+      stroke: #dc2626;
+      stroke-width: 5;
+    }
     .schema-link-map .map-node text {
       fill: #0f172a;
       font-size: 14px;
@@ -476,6 +504,15 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
       font-weight: 800;
       pointer-events: none;
       text-anchor: middle;
+    }
+    .schema-link-map .map-node-badge {
+      fill: #475569;
+      font-family: Consolas, "SFMono-Regular", monospace;
+      font-size: 11px;
+      paint-order: stroke;
+      stroke: rgba(255,255,255,0.92);
+      stroke-width: 3px;
+      stroke-linejoin: round;
     }
     .schema-map-detail {
       background: #f8fafc;
@@ -1161,6 +1198,8 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
       <h2>Schema Relationship Map</h2>
       <p class="meta">Node-link visualization of schema objects and the properties connecting them.</p>
       <div class="map-toolbar">
+        <button type="button" id="schema-map-view-resolved" class="map-view-mode active">Resolved Entity Graph</button>
+        <button type="button" id="schema-map-view-raw" class="map-view-mode">Raw Script Block Map</button>
         <button type="button" id="schema-map-full" class="map-mode active">Full graph</button>
         <button type="button" id="schema-map-primary" class="map-mode">Primary graph</button>
         <button type="button" id="schema-map-expand-all">Expand all</button>
@@ -1169,6 +1208,8 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
         <span id="schema-map-zoom-label" class="zoom-label">100%</span>
         <button type="button" id="schema-map-zoom-in">Zoom in</button>
         <button type="button" id="schema-map-zoom-reset">Reset</button>
+        <button type="button" id="schema-map-download-png">Download PNG</button>
+        <span id="schema-map-download-status" class="export-status" role="status" aria-live="polite"></span>
       </div>
       <div id="schema-link-map-root" class="schema-link-map"></div>
       <div id="schema-map-detail" class="schema-map-detail hidden"></div>
@@ -1185,7 +1226,7 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
   <script>
     const reportData = ${escapeScriptJson(report)};
     const mapZoomState = { value: 1 };
-    const mapViewState = { mode: 'full' };
+    const mapViewState = { mode: 'full', source: 'resolved' };
     const mapRenderState = { graph: null, canvas: null, collapsedIds: new Set(), hasDrawn: false };
     const treeViewState = { showSystemFields: false };
 
@@ -1407,9 +1448,43 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
         return;
       }
 
+      mountSchemaMapGraph(
+        graph,
+        container,
+        scopeLabel + ': ' + graph.nodes.length + ' nodes / ' + graph.links.length + ' links'
+      );
+    }
+
+    function renderRawScriptBlockMap(rawMap, container) {
+      container.textContent = '';
+      clearSchemaMapNodeDetail();
+
+      if (!rawMap || !rawMap.nodes || rawMap.nodes.length === 0) {
+        const p = document.createElement('p');
+        p.className = 'map-empty';
+        p.textContent = 'No raw JSON-LD script block data present.';
+        container.appendChild(p);
+        return;
+      }
+
+      const graph = hydrateRawScriptBlockGraph(rawMap);
+      const summary = rawMap.summary || {};
+      const summaryText = 'Raw script block map: '
+        + (summary.blockCount || 0) + ' blocks / '
+        + (summary.typedBlockCount || 0) + ' typed script blocks / '
+        + (summary.untypedBlockCount || 0) + ' untyped or data payload blocks / '
+        + (summary.nestedTypedSchemaNodeCount || 0) + ' nested typed schema nodes / '
+        + (summary.internalParentChildLinkCount || 0) + ' internal parent-child links / '
+        + (summary.crossBlockReferenceCount || 0) + ' cross-block refs / '
+        + (summary.orphanReferenceCount || 0) + ' orphan refs'
+        + (summary.truncated ? ' / truncated' : '');
+      mountSchemaMapGraph(graph, container, summaryText);
+    }
+
+    function mountSchemaMapGraph(graph, container, summaryText) {
       const summary = document.createElement('p');
       summary.className = 'schema-map-summary';
-      summary.textContent = scopeLabel + ': ' + graph.nodes.length + ' nodes / ' + graph.links.length + ' links';
+      summary.textContent = summaryText;
       container.appendChild(summary);
 
       const viewport = document.createElement('div');
@@ -1417,8 +1492,8 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
       const canvas = document.createElement('div');
       canvas.id = 'schema-link-map-zoom-layer';
       canvas.className = 'schema-link-map-canvas';
-      canvas.dataset.baseWidth = String(graph.width);
-      canvas.dataset.baseHeight = String(graph.height);
+      canvas.dataset.baseWidth = String(graph.width || 0);
+      canvas.dataset.baseHeight = String(graph.height || 0);
       viewport.appendChild(canvas);
       container.appendChild(viewport);
 
@@ -1428,6 +1503,58 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
       mapRenderState.hasDrawn = false;
       setSchemaMapZoom(1);
       bindSchemaMapGestures(viewport);
+    }
+
+    function hydrateRawScriptBlockGraph(rawMap) {
+      const nodes = (rawMap.nodes || []).map((node, index) => ({
+        id: node.id || 'raw-node-' + index,
+        depth: rawMapNodeDepth(node),
+        label: node.label || 'Raw node',
+        type: node.type || node.kind || 'Raw',
+        kind: node.kind || 'object',
+        status: node.status || 'ok',
+        badges: node.badges || [],
+        color: rawMapNodeColor(node),
+        details: rawMapNodeDetails(node),
+        x: 0,
+        y: 0,
+      }));
+      const nodeById = new Map(nodes.map(node => [node.id, node]));
+      const links = (rawMap.links || [])
+        .map(link => ({
+          source: nodeById.get(link.sourceId),
+          target: nodeById.get(link.targetId),
+          label: link.label,
+          kind: link.kind,
+          status: link.status || 'ok',
+        }))
+        .filter(link => link.source && link.target);
+
+      return { nodes, links: dedupeLinks(links) };
+    }
+
+    function rawMapNodeDepth(node) {
+      if (node.kind === 'block') return 0;
+      const path = String(node.path || '');
+      return Math.min(7, 1 + (path.match(/\\.|\\[/g) || []).length);
+    }
+
+    function rawMapNodeDetails(node) {
+      const details = Array.isArray(node.details) ? node.details.slice() : [];
+      if (node.kind) details.unshift({ key: 'kind', value: node.kind });
+      if (node.badges && node.badges.length > 0) {
+        details.push({ key: 'badges', value: node.badges.join(', ') });
+      }
+      return details;
+    }
+
+    function rawMapNodeColor(node) {
+      if (node.status === 'error') return '#fecaca';
+      if (node.kind === 'block') return node.status === 'warning' ? '#fde68a' : '#93c5fd';
+      if (node.kind === 'reference') return '#fcd34d';
+      if (node.kind === 'array') return '#c4b5fd';
+      if (node.kind === 'value') return '#d1d5db';
+      return schemaMapColor(node.type || 'Schema');
     }
 
     function normalizeRelationshipRoots(rootInput) {
@@ -1625,6 +1752,7 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
 
     function schemaMapType(value) {
       if (!value || typeof value !== 'object') return 'Schema';
+      if (isAnalyticsDataPayload(value)) return 'Analytics/Data Payload';
       const type = value['@type'];
       if (Array.isArray(type) && type.length > 0) return String(type[0]);
       return typeof type === 'string' && type.length > 0 ? type : 'Schema';
@@ -1632,6 +1760,17 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
 
     function schemaMapNodeLabel(value) {
       const type = schemaMapType(value);
+      if (type === 'Analytics/Data Payload') {
+        const name = typeof value.item_name === 'string' && value.item_name.length > 0
+          ? value.item_name
+          : typeof value.item_list_name === 'string' && value.item_list_name.length > 0
+            ? value.item_list_name
+            : undefined;
+        return name
+          ? 'Analytics/Data Payload: ' + truncateText(name, 42)
+          : 'Analytics/Data Payload';
+      }
+
       const name = typeof value.name === 'string' && value.name.length > 0
         ? value.name
         : undefined;
@@ -1654,6 +1793,13 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
       addSchemaMapDetail(details, 'url', value.url);
       addSchemaMapDetail(details, 'sku', value.sku);
       addSchemaMapDetail(details, 'gtin', value.gtin || value.gtin8 || value.gtin12 || value.gtin13 || value.gtin14);
+      if (schemaMapType(value) === 'Analytics/Data Payload') {
+        addSchemaMapDetail(details, 'item name', value.item_name);
+        addSchemaMapDetail(details, 'item category', value.item_category);
+        addSchemaMapDetail(details, 'item list', value.item_list_name || value.item_list_id);
+        addSchemaMapDetail(details, 'price', value.price);
+        addSchemaMapDetail(details, 'stock', value.stock_status);
+      }
 
       if (value._meta) {
         addSchemaMapDetail(details, 'source', value._meta.sourceMode);
@@ -1681,7 +1827,26 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
       if (type === 'VideoObject') return '#9ec5fe';
       if (type === 'ItemList' || type === 'ListItem') return '#86d1bd';
       if (type === 'ImageObject') return '#a7c7e7';
+      if (type === 'Analytics/Data Payload') return '#c4b5fd';
       return '#b8a4e3';
+    }
+
+    function isAnalyticsDataPayload(value) {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+      if (value['@type']) return false;
+      const keys = Object.keys(value);
+      const hasItemKey = keys.some(key => key.indexOf('item_') === 0);
+      return hasItemKey
+        || Object.prototype.hasOwnProperty.call(value, 'event')
+        || Object.prototype.hasOwnProperty.call(value, 'ecommerce')
+        || Object.prototype.hasOwnProperty.call(value, 'gtm')
+        || (
+          Object.prototype.hasOwnProperty.call(value, 'currency') &&
+          (
+            Object.prototype.hasOwnProperty.call(value, 'price') ||
+            Object.prototype.hasOwnProperty.call(value, 'stock_status')
+          )
+        );
     }
 
     function stringTail(value) {
@@ -1782,7 +1947,7 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
       const points = directionalLinkPoints(link.source, link.target, 18);
       const curve = Math.max(80, Math.abs(points.x2 - points.x1) * 0.42);
       const path = createSvgElement('path');
-      path.setAttribute('class', 'map-edge');
+      path.setAttribute('class', 'map-edge edge-' + (link.kind || 'contains') + ' edge-' + (link.status || 'ok'));
       path.setAttribute(
         'd',
         'M' + points.x1 + ' ' + points.y1
@@ -1794,7 +1959,7 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
       svg.appendChild(path);
 
       const label = createSvgElement('text');
-      label.setAttribute('class', 'map-edge-label');
+      label.setAttribute('class', 'map-edge-label edge-' + (link.status || 'ok'));
       label.setAttribute('text-anchor', 'start');
       label.setAttribute('x', points.x1 + Math.min(curve, 120) * 0.55);
       label.setAttribute('y', points.y1 + (points.y2 - points.y1) * 0.35 - 6);
@@ -1806,7 +1971,10 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
       const group = createSvgElement('g');
       const hasChildren = schemaMapNodeHasChildren(node.id);
       const isCollapsed = mapRenderState.collapsedIds.has(node.id);
-      group.setAttribute('class', 'map-node' + (isCollapsed ? ' collapsed' : ''));
+      group.setAttribute(
+        'class',
+        'map-node node-' + (node.status || 'ok') + (isCollapsed ? ' collapsed' : '')
+      );
       group.setAttribute('transform', 'translate(' + node.x + ' ' + node.y + ')');
       group.setAttribute('tabindex', '0');
       group.setAttribute('role', 'button');
@@ -1836,6 +2004,15 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
       text.setAttribute('y', '5');
       text.textContent = node.label;
       group.appendChild(text);
+
+      if (node.badges && node.badges.length > 0) {
+        const badge = createSvgElement('text');
+        badge.setAttribute('class', 'map-node-badge');
+        badge.setAttribute('x', '14');
+        badge.setAttribute('y', '21');
+        badge.textContent = node.badges.slice(0, 3).join(' | ');
+        group.appendChild(badge);
+      }
 
       group.addEventListener('click', event => {
         event.stopPropagation();
@@ -2430,6 +2607,138 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
       }
     }
 
+    function setSchemaMapDownloadStatus(message) {
+      const status = document.getElementById('schema-map-download-status');
+      if (status) status.textContent = message;
+    }
+
+    function downloadCurrentSchemaMapPng() {
+      if (!ensureSchemaMapReady()) {
+        setSchemaMapDownloadStatus('Open the map before downloading.');
+        return;
+      }
+
+      const svg = document.querySelector('#schema-link-map-zoom-layer svg');
+      if (!svg) {
+        setSchemaMapDownloadStatus('No map image is ready yet.');
+        return;
+      }
+
+      const width = Math.max(1, Number(svg.getAttribute('width')) || Math.ceil(svg.getBBox().width));
+      const height = Math.max(1, Number(svg.getAttribute('height')) || Math.ceil(svg.getBBox().height));
+      const clone = svg.cloneNode(true);
+      clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+      clone.setAttribute('width', String(width));
+      clone.setAttribute('height', String(height));
+      prepareSchemaMapSvgForPngExport(clone);
+
+      const serialized = new XMLSerializer().serializeToString(clone);
+      const svgBlob = new Blob([serialized], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(svgBlob);
+      const image = new Image();
+
+      image.onload = () => {
+        const scale = 2;
+        const canvas = document.createElement('canvas');
+        canvas.width = width * scale;
+        canvas.height = height * scale;
+        const context = canvas.getContext('2d');
+        if (!context) {
+          URL.revokeObjectURL(url);
+          setSchemaMapDownloadStatus('Image export failed.');
+          return;
+        }
+
+        context.fillStyle = '#fbfdff';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.scale(scale, scale);
+        context.drawImage(image, 0, 0);
+        URL.revokeObjectURL(url);
+
+        canvas.toBlob(blob => {
+          if (!blob) {
+            setSchemaMapDownloadStatus('Image export failed.');
+            return;
+          }
+
+          const link = document.createElement('a');
+          const mode = mapViewState.source === 'raw' ? 'raw-script-block-map' : 'resolved-entity-graph';
+          link.href = URL.createObjectURL(blob);
+          link.download = 'schema-' + mode + '.png';
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          window.setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+          setSchemaMapDownloadStatus('Downloaded map PNG.');
+        }, 'image/png');
+      };
+
+      image.onerror = () => {
+        URL.revokeObjectURL(url);
+        setSchemaMapDownloadStatus('Image export failed.');
+      };
+
+      image.src = url;
+    }
+
+    function prepareSchemaMapSvgForPngExport(svg) {
+      const background = createSvgElement('rect');
+      background.setAttribute('x', '0');
+      background.setAttribute('y', '0');
+      background.setAttribute('width', svg.getAttribute('width') || '100%');
+      background.setAttribute('height', svg.getAttribute('height') || '100%');
+      background.setAttribute('fill', '#fbfdff');
+      svg.insertBefore(background, svg.firstChild);
+
+      svg.querySelectorAll('.map-edge').forEach(edge => {
+        const isWarning = edge.classList.contains('edge-warning') || edge.classList.contains('edge-cross-block-reference');
+        const isError = edge.classList.contains('edge-error');
+        edge.setAttribute('fill', 'none');
+        edge.setAttribute('stroke', isError ? '#dc2626' : isWarning ? '#f59e0b' : '#8ec5e8');
+        edge.setAttribute('stroke-width', isWarning || isError ? '1.2' : '0.9');
+        edge.setAttribute('stroke-linecap', 'round');
+        edge.setAttribute('stroke-linejoin', 'round');
+        edge.removeAttribute('style');
+        if (isWarning || isError) {
+          edge.setAttribute('stroke-dasharray', isError ? '4 5' : '8 7');
+        } else {
+          edge.removeAttribute('stroke-dasharray');
+        }
+        edge.removeAttribute('stroke-dashoffset');
+      });
+
+      svg.querySelectorAll('.map-edge-label').forEach(label => {
+        const shouldKeep = label.classList.contains('edge-warning') || label.classList.contains('edge-error');
+        if (!shouldKeep) {
+          label.remove();
+          return;
+        }
+
+        label.setAttribute('fill', '#475569');
+        label.setAttribute('font-family', 'Consolas, monospace');
+        label.setAttribute('font-size', '12');
+        label.setAttribute('opacity', '1');
+        label.removeAttribute('style');
+      });
+
+      svg.querySelectorAll('.map-node').forEach(node => {
+        node.setAttribute('opacity', '1');
+        node.removeAttribute('style');
+      });
+
+      svg.querySelectorAll('.map-node circle').forEach(circle => {
+        circle.setAttribute('stroke', '#ffffff');
+        circle.setAttribute('stroke-width', '2');
+      });
+
+      svg.querySelectorAll('.map-node text, .map-node-badge, .map-expander').forEach(text => {
+        text.setAttribute('fill', text.classList.contains('map-node-badge') ? '#475569' : '#0f172a');
+        text.setAttribute('font-family', 'Consolas, monospace');
+        text.setAttribute('opacity', '1');
+        text.removeAttribute('style');
+      });
+    }
+
     function schemaMapViewportCenterFocus() {
       const viewport = document.querySelector('.schema-link-map-viewport');
       if (!viewport) return undefined;
@@ -2503,6 +2812,11 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
 
     function renderCurrentSchemaMap() {
       const container = document.getElementById('schema-link-map-root');
+      if (mapViewState.source === 'raw') {
+        renderRawScriptBlockMap(reportData.rawJsonLdBlockMap, container);
+        return;
+      }
+
       const isPrimary = mapViewState.mode === 'primary';
       renderSchemaRelationshipMap(
         isPrimary ? reportData.primaryRoot : reportData.resolvedEntities,
@@ -3120,6 +3434,26 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
       renderCurrentSchemaMap();
     }
 
+    function setSchemaMapSource(source) {
+      mapViewState.source = source;
+      document.querySelectorAll('.map-view-mode').forEach(button => {
+        button.classList.toggle('active', button.id === 'schema-map-view-' + source);
+      });
+      updateSchemaMapToolbarState();
+      if (!deferredReportTabs.map) return;
+      renderCurrentSchemaMap();
+    }
+
+    function updateSchemaMapToolbarState() {
+      const isRaw = mapViewState.source === 'raw';
+      ['schema-map-full', 'schema-map-primary'].forEach(id => {
+        const button = document.getElementById(id);
+        if (!button) return;
+        button.disabled = isRaw;
+        button.title = isRaw ? 'Raw script block map always shows all JSON-LD blocks.' : '';
+      });
+    }
+
     function cleanSchemaForExport(value, seen) {
       const visited = seen || new WeakSet();
       if (!value || typeof value !== 'object') return value;
@@ -3226,6 +3560,9 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
       treeViewState.showSystemFields = event.target.checked;
       renderSemanticTreeViews();
     });
+    updateSchemaMapToolbarState();
+    document.getElementById('schema-map-view-resolved').addEventListener('click', () => setSchemaMapSource('resolved'));
+    document.getElementById('schema-map-view-raw').addEventListener('click', () => setSchemaMapSource('raw'));
     document.getElementById('schema-map-full').addEventListener('click', () => setSchemaMapMode('full'));
     document.getElementById('schema-map-primary').addEventListener('click', () => setSchemaMapMode('primary'));
     document.getElementById('schema-map-expand-all').addEventListener('click', () => expandAllSchemaMapBranches());
@@ -3233,6 +3570,7 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
     document.getElementById('schema-map-zoom-out').addEventListener('click', () => adjustSchemaMapZoom(-0.15));
     document.getElementById('schema-map-zoom-in').addEventListener('click', () => adjustSchemaMapZoom(0.15));
     document.getElementById('schema-map-zoom-reset').addEventListener('click', () => resetSchemaMapView());
+    document.getElementById('schema-map-download-png').addEventListener('click', () => downloadCurrentSchemaMapPng());
     document.getElementById('copy-clean-jsonld').addEventListener('click', () => copyCleanJsonLd());
     document.getElementById('download-clean-jsonld').addEventListener('click', () => downloadCleanJsonLd());
   </script>

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { compareStaticRenderedSchemas, extractSchemasFromHtml, scrapeJsonLdInput } from '../src';
+import { buildJsonLdDiagnostics } from '../src/scraper';
 
 describe('schema scraper', () => {
   it('returns raw JSON-LD data and a matching source tree', () => {
@@ -71,6 +72,8 @@ describe('schema scraper', () => {
       finalUrl: 'file://schema.json',
       jsonLdDiagnostics: {
         jsonLdBlockCount: 1,
+        typedSchemaBlockCount: 1,
+        untypedJsonLdBlockCount: 0,
         blocks: [
           {
             index: 1,
@@ -125,6 +128,12 @@ describe('schema scraper', () => {
       jsonLdTypes: [],
       jsonLdEntityCount: 0,
       syntaxStatus: 'critical',
+    });
+
+    expect(buildJsonLdDiagnostics(schemas)).toMatchObject({
+      jsonLdBlockCount: 2,
+      typedSchemaBlockCount: 1,
+      untypedJsonLdBlockCount: 1,
     });
   });
 
