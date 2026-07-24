@@ -1209,6 +1209,8 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
         <button type="button" id="schema-map-zoom-in">Zoom in</button>
         <button type="button" id="schema-map-zoom-reset">Reset</button>
         <button type="button" id="schema-map-download-png">Download PNG</button>
+        <button type="button" id="schema-map-download-detailed-png">Download Detailed PNG</button>
+        <button type="button" id="schema-map-download-json">Download Details JSON</button>
         <span id="schema-map-download-status" class="export-status" role="status" aria-live="polite"></span>
       </div>
       <div id="schema-link-map-root" class="schema-link-map"></div>
@@ -1516,6 +1518,7 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
         badges: node.badges || [],
         color: rawMapNodeColor(node),
         details: rawMapNodeDetails(node),
+        payload: node,
         x: 0,
         y: 0,
       }));
@@ -1580,6 +1583,7 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
           type: schemaMapType(value),
           color: schemaMapColor(schemaMapType(value)),
           details: schemaMapNodeDetails(value),
+          payload: cleanSchemaForExport(value),
           x: 0,
           y: 0,
         };
@@ -1781,7 +1785,14 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
         ? 'rating ' + String(value.ratingValue)
         : undefined;
       const suffix = name || price || rating || stringTail(value['@id']) || stringTail(value.url);
-      return suffix ? type + ': ' + truncateText(suffix, 42) : type;
+      return suffix ? type + ': ' + truncateText(suffix, schemaMapLabelSuffixLimit(type)) : type;
+    }
+
+    function schemaMapLabelSuffixLimit(type) {
+      if (type === 'Question') return 30;
+      if (type === 'Answer') return 28;
+      if (type === 'FAQPage') return 28;
+      return 42;
     }
 
     function schemaMapNodeDetails(value) {
@@ -1789,8 +1800,12 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
       const details = [];
       addSchemaMapDetail(details, 'type', schemaMapType(value));
       addSchemaMapDetail(details, 'name', value.name);
+      addSchemaMapDetail(details, 'text', value.text);
+      addSchemaMapDetail(details, 'description', value.description);
       addSchemaMapDetail(details, '@id', value['@id']);
       addSchemaMapDetail(details, 'url', value.url);
+      addSchemaMapDetail(details, 'telephone', value.telephone);
+      addSchemaMapDetail(details, 'email', value.email);
       addSchemaMapDetail(details, 'sku', value.sku);
       addSchemaMapDetail(details, 'gtin', value.gtin || value.gtin8 || value.gtin12 || value.gtin13 || value.gtin14);
       if (schemaMapType(value) === 'Analytics/Data Payload') {
@@ -1815,6 +1830,47 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
         key,
         value: Array.isArray(value) ? value.join(', ') : String(value),
       });
+    }
+
+    function schemaMapExportDetailLines(node) {
+      const preferredKeys = [
+        'type',
+        '@id',
+        'url',
+        'name',
+        'text',
+        'description',
+        'item name',
+        'item category',
+        'item list',
+        'price',
+        'stock',
+        'sku',
+        'gtin',
+        'block',
+        'classification',
+        'status',
+        'path',
+        'badges',
+      ];
+      const details = Array.isArray(node.details) ? node.details : [];
+      const selected = [];
+
+      preferredKeys.forEach(key => {
+        if (selected.length >= 4) return;
+        const detail = details.find(item => item.key === key);
+        if (!detail || !detail.value) return;
+        selected.push(key + ': ' + truncateText(detail.value, 58));
+      });
+
+      if (selected.length === 0 && details.length > 0) {
+        details.slice(0, 3).forEach(detail => {
+          if (!detail.value) return;
+          selected.push(detail.key + ': ' + truncateText(detail.value, 58));
+        });
+      }
+
+      return selected;
     }
 
     function schemaMapColor(type) {
@@ -1860,12 +1916,13 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
       return text.length > maxLength ? text.slice(0, maxLength - 1) + '...' : text;
     }
 
-    function layoutRelationshipGraph(graph, spread = 1) {
+    function layoutRelationshipGraph(graph, spread = 1, options) {
       const spreadFactor = Math.max(1, spread);
+      const detailed = Boolean(options && options.detailed);
       const leftPadding = 90;
       const topPadding = 90;
-      const columnGap = 300 * spreadFactor;
-      const rowGap = 74 * spreadFactor;
+      const columnGap = (detailed ? 560 : 440) * spreadFactor;
+      const rowGap = (detailed ? 116 : 74) * spreadFactor;
       const childrenById = new Map();
       const incomingIds = new Set();
       const visited = new Set();
@@ -1913,7 +1970,8 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
       graph.height = Math.round(Math.max(560, nextY + topPadding));
     }
 
-    function drawRelationshipGraph(graph, container) {
+    function drawRelationshipGraph(graph, container, options) {
+      const detailed = Boolean(options && options.detailed);
       container.textContent = '';
       const svg = createSvgElement('svg');
       svg.setAttribute('viewBox', '0 0 ' + graph.width + ' ' + graph.height);
@@ -1938,7 +1996,7 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
       svg.appendChild(defs);
 
       graph.links.forEach(link => drawSchemaLink(svg, link));
-      graph.nodes.forEach(node => drawSchemaNode(svg, node));
+      graph.nodes.forEach(node => drawSchemaNode(svg, node, { detailed }));
 
       container.appendChild(svg);
     }
@@ -1967,7 +2025,8 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
       svg.appendChild(label);
     }
 
-    function drawSchemaNode(svg, node) {
+    function drawSchemaNode(svg, node, options) {
+      const detailed = Boolean(options && options.detailed);
       const group = createSvgElement('g');
       const hasChildren = schemaMapNodeHasChildren(node.id);
       const isCollapsed = mapRenderState.collapsedIds.has(node.id);
@@ -2005,11 +2064,22 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
       text.textContent = node.label;
       group.appendChild(text);
 
+      if (detailed) {
+        schemaMapExportDetailLines(node).forEach((line, index) => {
+          const detail = createSvgElement('text');
+          detail.setAttribute('class', 'map-node-export-detail');
+          detail.setAttribute('x', '18');
+          detail.setAttribute('y', String(22 + index * 15));
+          detail.textContent = line;
+          group.appendChild(detail);
+        });
+      }
+
       if (node.badges && node.badges.length > 0) {
         const badge = createSvgElement('text');
         badge.setAttribute('class', 'map-node-badge');
         badge.setAttribute('x', '14');
-        badge.setAttribute('y', '21');
+        badge.setAttribute('y', detailed ? String(24 + schemaMapExportDetailLines(node).length * 15) : '21');
         badge.textContent = node.badges.slice(0, 3).join(' | ');
         group.appendChild(badge);
       }
@@ -2613,12 +2683,64 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
     }
 
     function downloadCurrentSchemaMapPng() {
+      downloadSchemaMapPng({ detailed: false });
+    }
+
+    function downloadDetailedSchemaMapPng() {
+      downloadSchemaMapPng({ detailed: true });
+    }
+
+    function downloadSchemaMapDetailsJson() {
       if (!ensureSchemaMapReady()) {
         setSchemaMapDownloadStatus('Open the map before downloading.');
         return;
       }
 
-      const svg = document.querySelector('#schema-link-map-zoom-layer svg');
+      const graph = visibleRelationshipGraph(mapRenderState.graph);
+      const payload = {
+        url: reportData.url,
+        finalUrl: reportData.finalUrl,
+        generatedAt: reportData.generatedAt,
+        mapSource: mapViewState.source,
+        mapMode: mapViewState.mode,
+        summary: {
+          nodes: graph.nodes.length,
+          links: graph.links.length,
+        },
+        nodes: graph.nodes.map(node => ({
+          id: node.id,
+          label: node.label,
+          type: node.type,
+          status: node.status || 'ok',
+          badges: node.badges || [],
+          details: node.details || [],
+          payload: node.payload,
+        })),
+        links: graph.links.map(link => ({
+          sourceId: link.source.id,
+          sourceLabel: link.source.label,
+          targetId: link.target.id,
+          targetLabel: link.target.label,
+          label: link.label,
+          kind: link.kind || 'contains',
+          status: link.status || 'ok',
+        })),
+      };
+      const mode = mapViewState.source === 'raw' ? 'raw-script-block-map' : 'resolved-entity-graph';
+      downloadJsonFile(payload, 'schema-' + mode + '-details.json');
+      setSchemaMapDownloadStatus('Downloaded graph details JSON.');
+    }
+
+    function downloadSchemaMapPng(options) {
+      if (!ensureSchemaMapReady()) {
+        setSchemaMapDownloadStatus('Open the map before downloading.');
+        return;
+      }
+
+      const detailed = Boolean(options && options.detailed);
+      const svg = detailed
+        ? buildDetailedSchemaMapExportSvg()
+        : document.querySelector('#schema-link-map-zoom-layer svg');
       if (!svg) {
         setSchemaMapDownloadStatus('No map image is ready yet.');
         return;
@@ -2630,7 +2752,7 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
       clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
       clone.setAttribute('width', String(width));
       clone.setAttribute('height', String(height));
-      prepareSchemaMapSvgForPngExport(clone);
+      prepareSchemaMapSvgForPngExport(clone, { keepLabels: detailed });
 
       const serialized = new XMLSerializer().serializeToString(clone);
       const svgBlob = new Blob([serialized], { type: 'image/svg+xml;charset=utf-8' });
@@ -2663,13 +2785,14 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
 
           const link = document.createElement('a');
           const mode = mapViewState.source === 'raw' ? 'raw-script-block-map' : 'resolved-entity-graph';
+          const detailSuffix = detailed ? '-detailed' : '';
           link.href = URL.createObjectURL(blob);
-          link.download = 'schema-' + mode + '.png';
+          link.download = 'schema-' + mode + detailSuffix + '.png';
           document.body.appendChild(link);
           link.click();
           document.body.removeChild(link);
           window.setTimeout(() => URL.revokeObjectURL(link.href), 1000);
-          setSchemaMapDownloadStatus('Downloaded map PNG.');
+          setSchemaMapDownloadStatus(detailed ? 'Downloaded detailed map PNG.' : 'Downloaded map PNG.');
         }, 'image/png');
       };
 
@@ -2681,7 +2804,41 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
       image.src = url;
     }
 
-    function prepareSchemaMapSvgForPngExport(svg) {
+    function downloadJsonFile(payload, filename) {
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+    }
+
+    function buildDetailedSchemaMapExportSvg() {
+      if (!mapRenderState.graph) return null;
+      const graph = visibleRelationshipGraph(mapRenderState.graph);
+      const exportGraph = {
+        nodes: graph.nodes.map(node => ({ ...node })),
+        links: graph.links.map(link => ({
+          ...link,
+          source: { ...link.source },
+          target: { ...link.target },
+        })),
+      };
+      const nodeById = new Map(exportGraph.nodes.map(node => [node.id, node]));
+      exportGraph.links.forEach(link => {
+        link.source = nodeById.get(link.source.id) || link.source;
+        link.target = nodeById.get(link.target.id) || link.target;
+      });
+      layoutRelationshipGraph(exportGraph, Math.max(1.35, mapZoomState.value), { detailed: true });
+      const wrapper = document.createElement('div');
+      drawRelationshipGraph(exportGraph, wrapper, { detailed: true });
+      return wrapper.querySelector('svg');
+    }
+
+    function prepareSchemaMapSvgForPngExport(svg, options) {
+      const keepLabels = Boolean(options && options.keepLabels);
       const background = createSvgElement('rect');
       background.setAttribute('x', '0');
       background.setAttribute('y', '0');
@@ -2709,7 +2866,7 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
 
       svg.querySelectorAll('.map-edge-label').forEach(label => {
         const shouldKeep = label.classList.contains('edge-warning') || label.classList.contains('edge-error');
-        if (!shouldKeep) {
+        if (!keepLabels && !shouldKeep) {
           label.remove();
           return;
         }
@@ -2731,9 +2888,17 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
         circle.setAttribute('stroke-width', '2');
       });
 
-      svg.querySelectorAll('.map-node text, .map-node-badge, .map-expander').forEach(text => {
-        text.setAttribute('fill', text.classList.contains('map-node-badge') ? '#475569' : '#0f172a');
+      svg.querySelectorAll('.map-node text, .map-node-badge, .map-node-export-detail, .map-expander').forEach(text => {
+        text.setAttribute(
+          'fill',
+          text.classList.contains('map-node-badge') || text.classList.contains('map-node-export-detail')
+            ? '#475569'
+            : '#0f172a'
+        );
         text.setAttribute('font-family', 'Consolas, monospace');
+        if (text.classList.contains('map-node-export-detail')) {
+          text.setAttribute('font-size', '11');
+        }
         text.setAttribute('opacity', '1');
         text.removeAttribute('style');
       });
@@ -3571,6 +3736,8 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
     document.getElementById('schema-map-zoom-in').addEventListener('click', () => adjustSchemaMapZoom(0.15));
     document.getElementById('schema-map-zoom-reset').addEventListener('click', () => resetSchemaMapView());
     document.getElementById('schema-map-download-png').addEventListener('click', () => downloadCurrentSchemaMapPng());
+    document.getElementById('schema-map-download-detailed-png').addEventListener('click', () => downloadDetailedSchemaMapPng());
+    document.getElementById('schema-map-download-json').addEventListener('click', () => downloadSchemaMapDetailsJson());
     document.getElementById('copy-clean-jsonld').addEventListener('click', () => copyCleanJsonLd());
     document.getElementById('download-clean-jsonld').addEventListener('click', () => downloadCleanJsonLd());
   </script>

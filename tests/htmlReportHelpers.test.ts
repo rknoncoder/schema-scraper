@@ -96,10 +96,16 @@ describe('HTML report helpers', () => {
     expect(html).toContain('Resolved Entity Graph');
     expect(html).toContain('Raw Script Block Map');
     expect(html).toContain('Download PNG');
+    expect(html).toContain('Download Detailed PNG');
+    expect(html).toContain('Download Details JSON');
     expect(html).toContain('Static vs Rendered Diff');
     expect(script).toContain('function downloadCurrentSchemaMapPng()');
-    expect(script).toContain('function prepareSchemaMapSvgForPngExport(svg)');
+    expect(script).toContain('function downloadDetailedSchemaMapPng()');
+    expect(script).toContain('function downloadSchemaMapDetailsJson()');
+    expect(script).toContain('function schemaMapExportDetailLines(node)');
+    expect(script).toContain('function prepareSchemaMapSvgForPngExport(svg, options)');
     expect(script).toContain('function isAnalyticsDataPayload(value)');
+    expect(script).toContain('function schemaMapLabelSuffixLimit(type)');
     expect(script).toContain('const scale = 2;');
     expect(script).toContain('treeViewState.showSystemFields');
     expect(() => new vm.Script(script ?? '')).not.toThrow();
