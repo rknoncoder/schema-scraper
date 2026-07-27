@@ -8,6 +8,7 @@ export interface GraphEntity {
 export interface GraphEntityMeta {
   sourceMode?: 'static' | 'rendered' | 'merged';
   extractionChannel?: 'json-ld' | 'microdata' | 'rdfa' | 'mixed';
+  jsonLdBlockIndex?: number;
 }
 
 export interface ReferenceNode {
@@ -351,10 +352,13 @@ function mergeEntityMeta(
   const secondMode = second.sourceMode;
   const firstChannel = first.extractionChannel;
   const secondChannel = second.extractionChannel;
+  const firstBlockIndex = first.jsonLdBlockIndex;
+  const secondBlockIndex = second.jsonLdBlockIndex;
 
   return {
     sourceMode: firstMode === secondMode ? firstMode : 'merged',
     extractionChannel: firstChannel === secondChannel ? firstChannel : 'mixed',
+    jsonLdBlockIndex: firstBlockIndex === secondBlockIndex ? firstBlockIndex : undefined,
   };
 }
 

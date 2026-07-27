@@ -1033,6 +1033,87 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
     .google-rich-table tr:last-child td {
       border-bottom: 0;
     }
+    .inventory-toolbar {
+      align-items: center;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 12px 0 16px;
+    }
+    .inventory-toolbar input,
+    .inventory-toolbar select {
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      min-height: 34px;
+      padding: 7px 9px;
+    }
+    .inventory-toolbar input {
+      min-width: 280px;
+    }
+    .schema-inventory-table {
+      border: 1px solid var(--border);
+      border-collapse: collapse;
+      width: 100%;
+    }
+    .schema-inventory-table th,
+    .schema-inventory-table td {
+      border-bottom: 1px solid var(--border);
+      padding: 10px 12px;
+      text-align: left;
+      vertical-align: top;
+    }
+    .schema-inventory-table th {
+      background: #f8fafc;
+      color: var(--muted);
+      font-size: 0.76rem;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+    }
+    .inventory-row-toggle {
+      color: var(--accent);
+      cursor: pointer;
+      font-weight: 900;
+      margin-right: 6px;
+    }
+    .inventory-dot {
+      border-radius: 999px;
+      display: inline-block;
+      height: 14px;
+      margin-right: 7px;
+      vertical-align: -2px;
+      width: 14px;
+    }
+    .inventory-count {
+      font-size: 1.1rem;
+      font-weight: 900;
+    }
+    .inventory-count.error { color: #dc2626; }
+    .inventory-count.warning { color: #d97706; }
+    .inventory-count.ok { color: #16a34a; }
+    .inventory-badge {
+      border-radius: 999px;
+      display: inline-block;
+      font-size: 0.72rem;
+      font-weight: 800;
+      margin: 0 4px 4px 0;
+      padding: 3px 7px;
+      white-space: nowrap;
+    }
+    .inventory-badge-jsonld { background: #dbeafe; color: #1d4ed8; }
+    .inventory-badge-microdata { background: #fee2e2; color: #b91c1c; }
+    .inventory-badge-rdfa { background: #fef3c7; color: #92400e; }
+    .inventory-badge-valid { background: #dcfce7; color: #166534; }
+    .inventory-badge-warning { background: #fef3c7; color: #92400e; }
+    .inventory-badge-error { background: #fee2e2; color: #991b1b; }
+    .inventory-detail-row.hidden { display: none; }
+    .inventory-detail-row pre {
+      background: #f8fafc;
+      color: var(--text);
+      margin: 0;
+      max-height: 360px;
+      white-space: pre-wrap;
+    }
     .rich-status {
       display: inline-flex;
       align-items: center;
@@ -1095,6 +1176,7 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
     <button type="button" class="report-tab active" data-tab="health" role="tab" aria-selected="true">Health Diagnostics</button>
     <button type="button" class="report-tab" data-tab="strict" role="tab" aria-selected="false">Strict Google Mode</button>
     ${report.googleRichResults ? '<button type="button" class="report-tab" data-tab="google-rich" role="tab" aria-selected="false">Google Rich Results</button>' : ''}
+    <button type="button" class="report-tab" data-tab="inventory" role="tab" aria-selected="false">Schema Inventory</button>
     <button type="button" class="report-tab" data-tab="semantic" role="tab" aria-selected="false">Semantic Graph</button>
     <button type="button" class="report-tab" data-tab="map" role="tab" aria-selected="false">Relationship Map</button>
     <button type="button" class="report-tab" data-tab="layers" role="tab" aria-selected="false">Layered Entity Map</button>
@@ -1141,6 +1223,14 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
   </div>
 
   ${report.googleRichResults ? renderGoogleRichResultsPanel(report.googleRichResults) : ''}
+
+  <div id="tab-panel-inventory" class="tab-panel" role="tabpanel">
+    <section>
+      <h2>Schema Inventory</h2>
+      <p class="meta">Table view of detected schema blocks and graph-ready entities, with audit counts, summaries, and expandable evidence.</p>
+      <div id="schema-inventory-root"></div>
+    </section>
+  </div>
 
   <div id="tab-panel-semantic" class="tab-panel" role="tabpanel">
     <div class="toolbar">
@@ -2305,6 +2395,402 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
       container.appendChild(panel);
     }
 
+    function renderSchemaInventory(report, container) {
+      if (!container) return;
+      container.textContent = '';
+      const rows = buildSchemaInventoryRows(report);
+
+      const toolbar = document.createElement('div');
+      toolbar.className = 'inventory-toolbar';
+
+      const search = document.createElement('input');
+      search.type = 'search';
+      search.placeholder = 'Search name, value, summary, format...';
+      search.id = 'schema-inventory-search';
+      toolbar.appendChild(search);
+
+      const formatFilter = document.createElement('select');
+      formatFilter.id = 'schema-inventory-format';
+      ['All formats', ...uniqueValues(rows.map(row => row.formatLabel))].forEach((label, index) => {
+        const option = document.createElement('option');
+        option.value = index === 0 ? '' : label;
+        option.textContent = label;
+        formatFilter.appendChild(option);
+      });
+      toolbar.appendChild(formatFilter);
+
+      const statusFilter = document.createElement('select');
+      statusFilter.id = 'schema-inventory-status';
+      ['All statuses', 'Error', 'Warning', 'Valid'].forEach((label, index) => {
+        const option = document.createElement('option');
+        option.value = index === 0 ? '' : label.toLowerCase();
+        option.textContent = label;
+        statusFilter.appendChild(option);
+      });
+      toolbar.appendChild(statusFilter);
+
+      const downloadCsv = document.createElement('button');
+      downloadCsv.type = 'button';
+      downloadCsv.textContent = 'Download CSV';
+      toolbar.appendChild(downloadCsv);
+
+      const downloadJson = document.createElement('button');
+      downloadJson.type = 'button';
+      downloadJson.textContent = 'Download JSON';
+      toolbar.appendChild(downloadJson);
+
+      const status = document.createElement('span');
+      status.className = 'export-status';
+      status.setAttribute('role', 'status');
+      status.setAttribute('aria-live', 'polite');
+      toolbar.appendChild(status);
+      container.appendChild(toolbar);
+
+      const tableWrap = document.createElement('div');
+      container.appendChild(tableWrap);
+
+      function filteredRows() {
+        const query = search.value.trim().toLowerCase();
+        return rows.filter(row => {
+          if (formatFilter.value && row.formatLabel !== formatFilter.value) return false;
+          if (statusFilter.value && row.status !== statusFilter.value) return false;
+          if (!query) return true;
+          return [
+            row.name,
+            row.formatLabel,
+            row.value,
+            row.summary,
+            row.sourceMode,
+            row.blockLabel,
+            row.status,
+          ].join(' ').toLowerCase().includes(query);
+        });
+      }
+
+      function drawTable() {
+        const visibleRows = filteredRows();
+        status.textContent = visibleRows.length + ' of ' + rows.length + ' rows';
+        tableWrap.textContent = '';
+        tableWrap.appendChild(renderSchemaInventoryTable(visibleRows));
+      }
+
+      [search, formatFilter, statusFilter].forEach(control => {
+        control.addEventListener('input', drawTable);
+        control.addEventListener('change', drawTable);
+      });
+
+      downloadCsv.addEventListener('click', () => {
+        downloadTextFile(
+          inventoryRowsToCsv(filteredRows()),
+          'schema-inventory.csv',
+          'text/csv;charset=utf-8'
+        );
+      });
+
+      downloadJson.addEventListener('click', () => {
+        downloadJsonFile(filteredRows(), 'schema-inventory.json');
+      });
+
+      drawTable();
+    }
+
+    function renderSchemaInventoryTable(rows) {
+      const table = document.createElement('table');
+      table.className = 'schema-inventory-table';
+      const thead = document.createElement('thead');
+      const header = document.createElement('tr');
+      ['Name', 'Format', 'Block', 'Errors', 'Warnings', 'Valid', 'Value', 'Summary', 'Source'].forEach(label => {
+        const th = document.createElement('th');
+        th.textContent = label;
+        header.appendChild(th);
+      });
+      thead.appendChild(header);
+      table.appendChild(thead);
+
+      const tbody = document.createElement('tbody');
+      if (rows.length === 0) {
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.colSpan = 9;
+        td.className = 'meta';
+        td.textContent = 'No schema inventory rows match the current filters.';
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+        table.appendChild(tbody);
+        return table;
+      }
+
+      rows.forEach(row => {
+        const tr = document.createElement('tr');
+        tr.appendChild(inventoryNameCell(row));
+        tr.appendChild(inventoryTextCell(row.formatLabel));
+        tr.appendChild(inventoryTextCell(row.blockLabel));
+        tr.appendChild(inventoryCountCell(row.errorCount, 'error'));
+        tr.appendChild(inventoryCountCell(row.warningCount, 'warning'));
+        tr.appendChild(inventoryCountCell(row.validCount, 'ok'));
+        tr.appendChild(inventoryTextCell(row.value));
+        tr.appendChild(inventorySummaryCell(row));
+        tr.appendChild(inventoryTextCell(row.sourceMode));
+        tbody.appendChild(tr);
+
+        const detail = document.createElement('tr');
+        detail.className = 'inventory-detail-row hidden';
+        const detailCell = document.createElement('td');
+        detailCell.colSpan = 9;
+        const pre = document.createElement('pre');
+        pre.textContent = JSON.stringify(row.evidence, null, 2);
+        detailCell.appendChild(pre);
+        detail.appendChild(detailCell);
+        tbody.appendChild(detail);
+
+        tr.querySelector('.inventory-row-toggle').addEventListener('click', () => {
+          detail.classList.toggle('hidden');
+        });
+      });
+
+      table.appendChild(tbody);
+      return table;
+    }
+
+    function inventoryNameCell(row) {
+      const td = document.createElement('td');
+      const toggle = document.createElement('span');
+      toggle.className = 'inventory-row-toggle';
+      toggle.textContent = '>';
+      td.appendChild(toggle);
+
+      const dot = document.createElement('span');
+      dot.className = 'inventory-dot';
+      dot.style.background = row.color;
+      td.appendChild(dot);
+
+      const name = document.createElement('strong');
+      name.textContent = row.name;
+      td.appendChild(name);
+      return td;
+    }
+
+    function inventoryTextCell(value) {
+      const td = document.createElement('td');
+      td.textContent = value || '';
+      return td;
+    }
+
+    function inventoryCountCell(count, tone) {
+      const td = document.createElement('td');
+      const span = document.createElement('span');
+      span.className = 'inventory-count ' + tone;
+      span.textContent = String(count);
+      td.appendChild(span);
+      return td;
+    }
+
+    function inventorySummaryCell(row) {
+      const td = document.createElement('td');
+      const status = document.createElement('span');
+      status.className = 'inventory-badge inventory-badge-' + row.status;
+      status.textContent = row.status;
+      td.appendChild(status);
+      row.badges.slice(0, 5).forEach(badge => {
+        const span = document.createElement('span');
+        span.className = 'inventory-badge inventory-badge-' + formatBadgeClass(row.formatLabel);
+        span.textContent = badge;
+        td.appendChild(span);
+      });
+      const summary = document.createElement('div');
+      summary.textContent = row.summary;
+      td.appendChild(summary);
+      return td;
+    }
+
+    function buildSchemaInventoryRows(report) {
+      const rows = [];
+      const diagnosticsByIndex = new Map((report.jsonLdDiagnostics?.blocks || []).map(block => [block.index, block]));
+      const syntaxErrorsByBlock = groupBy(report.detectedSyntaxErrors || [], error => String(error.jsonLdBlockIndex || ''));
+      const qualityWarningsByBlock = groupBy(report.qualityWarnings || [], warning => String(warning.jsonLdBlockIndex || ''));
+      const rawBlockNodes = (report.rawJsonLdBlockMap?.nodes || []).filter(node => node.kind === 'block');
+
+      rawBlockNodes.forEach(node => {
+        const blockIndex = Number(String(node.id || '').replace('raw-block-', '')) || Number(detailValue(node.details, 'block')?.replace('#', '')) || 0;
+        const diagnostic = diagnosticsByIndex.get(blockIndex);
+        const syntaxErrors = syntaxErrorsByBlock.get(String(blockIndex)) || [];
+        const qualityWarnings = qualityWarningsByBlock.get(String(blockIndex)) || [];
+        const classification = detailValue(node.details, 'classification') || node.type || 'JSON-LD Block';
+        const badges = uniqueValues([
+          ...(node.badges || []),
+          diagnostic?.syntaxStatus && diagnostic.syntaxStatus !== 'valid' ? diagnostic.syntaxStatus : '',
+          qualityWarnings.length > 0 ? 'Quality Warning' : '',
+        ].filter(Boolean));
+        const warningBadges = badges.filter(badge =>
+          badge !== 'No Cross-Block @id Links' &&
+          badge !== 'Quality Warning'
+        );
+        const status = syntaxErrors.length > 0 || node.status === 'error'
+          ? 'error'
+          : node.status === 'warning' || diagnostic?.syntaxStatus === 'warning' || warningBadges.length > 0 || qualityWarnings.length > 0
+            ? 'warning'
+            : 'valid';
+        const warningCount = status === 'warning'
+          ? Math.max(1, warningBadges.length + qualityWarnings.length)
+          : 0;
+
+        rows.push({
+          id: 'jsonld-block-' + blockIndex,
+          name: classification,
+          formatLabel: 'JSON-LD',
+          blockLabel: blockIndex ? 'Block #' + blockIndex : 'Block',
+          errorCount: syntaxErrors.length,
+          warningCount,
+          validCount: status === 'valid' ? 1 : 0,
+          value: diagnostic?.types?.length ? diagnostic.types.join(', ') : detailValue(node.details, 'types') || '',
+          summary: inventorySummaryText({
+            classification,
+            status,
+            badges,
+            diagnostic,
+            syntaxErrors,
+            qualityWarnings,
+            node,
+          }),
+          sourceMode: detailValue(node.details, 'source') || diagnostic?.sourceMode || '',
+          status,
+          color: rawMapNodeColor(node),
+          badges,
+          evidence: {
+            node,
+            diagnostic,
+            syntaxErrors,
+            qualityWarnings,
+            childNodeCount: (report.rawJsonLdBlockMap?.nodes || []).filter(child => child.blockIndex === blockIndex && child.kind !== 'block').length,
+          },
+        });
+      });
+
+      const jsonLdBlockCount = rawBlockNodes.length;
+      const seenNonJsonRows = new Set();
+      (report.rawEntitiesForGraphResolver || []).forEach((entity, index) => {
+        const channel = entity?._meta?.extractionChannel;
+        if (channel !== 'microdata' && channel !== 'rdfa') return;
+        const key = channel + ':' + schemaMapNodeLabel(entity) + ':' + index;
+        if (seenNonJsonRows.has(key)) return;
+        seenNonJsonRows.add(key);
+        const type = schemaMapType(entity);
+        rows.push({
+          id: channel + '-' + index,
+          name: schemaMapNodeLabel(entity),
+          formatLabel: channel === 'microdata' ? 'Microdata' : 'RDFa',
+          blockLabel: 'Entity #' + (index + 1),
+          errorCount: 0,
+          warningCount: 0,
+          validCount: 1,
+          value: entity.name || entity.url || type,
+          summary: type,
+          sourceMode: entity._meta?.sourceMode || '',
+          status: 'valid',
+          color: schemaMapColor(type),
+          badges: [],
+          evidence: entity,
+        });
+      });
+
+      if (rows.length === 0 && jsonLdBlockCount === 0) {
+        (report.resolvedEntities || []).forEach((entity, index) => {
+          const type = schemaMapType(entity);
+          rows.push({
+            id: 'resolved-' + index,
+            name: schemaMapNodeLabel(entity),
+            formatLabel: 'Resolved',
+            blockLabel: 'Entity #' + (index + 1),
+            errorCount: 0,
+            warningCount: 0,
+            validCount: 1,
+            value: entity.name || entity.url || type,
+            summary: type,
+            sourceMode: entity._meta?.sourceMode || '',
+            status: 'valid',
+            color: schemaMapColor(type),
+            badges: [],
+            evidence: entity,
+          });
+        });
+      }
+
+      return rows.sort((a, b) => inventorySortKey(a).localeCompare(inventorySortKey(b)));
+    }
+
+    function inventorySortKey(row) {
+      const block = Number(String(row.blockLabel).replace(/[^0-9]/g, '')) || 99999;
+      return String(block).padStart(5, '0') + ':' + row.name;
+    }
+
+    function inventorySummaryText(input) {
+      if (input.syntaxErrors.length > 0) {
+        return input.syntaxErrors.map(error => error.message).join('; ');
+      }
+      if (input.qualityWarnings && input.qualityWarnings.length > 0) {
+        return input.qualityWarnings.map(warning =>
+          warning.message + (warning.path ? ' (' + warning.path + ')' : '')
+        ).join('; ');
+      }
+      if (input.badges.length > 0) return input.badges.join('; ');
+      if (input.diagnostic?.entityCount) {
+        return input.classification + ' with ' + input.diagnostic.entityCount + ' entity object(s).';
+      }
+      return input.classification;
+    }
+
+    function groupBy(values, keyFn) {
+      const groups = new Map();
+      values.forEach(value => {
+        const key = keyFn(value);
+        const group = groups.get(key) || [];
+        group.push(value);
+        groups.set(key, group);
+      });
+      return groups;
+    }
+
+    function uniqueValues(values) {
+      return Array.from(new Set((values || []).filter(value => value !== undefined && value !== null && value !== '')));
+    }
+
+    function detailValue(details, key) {
+      const detail = Array.isArray(details) ? details.find(item => item.key === key) : undefined;
+      return detail ? detail.value : undefined;
+    }
+
+    function formatBadgeClass(format) {
+      const value = String(format || '').toLowerCase();
+      if (value === 'json-ld') return 'jsonld';
+      if (value === 'microdata') return 'microdata';
+      if (value === 'rdfa') return 'rdfa';
+      return 'valid';
+    }
+
+    function inventoryRowsToCsv(rows) {
+      const headers = ['Name', 'Format', 'Block', 'Errors', 'Warnings', 'Valid', 'Value', 'Summary', 'Source'];
+      const lines = [headers.join(',')];
+      rows.forEach(row => {
+        lines.push([
+          row.name,
+          row.formatLabel,
+          row.blockLabel,
+          row.errorCount,
+          row.warningCount,
+          row.validCount,
+          row.value,
+          row.summary,
+          row.sourceMode,
+        ].map(csvEscape).join(','));
+      });
+      return lines.join('\\n');
+    }
+
+    function csvEscape(value) {
+      const text = String(value ?? '');
+      return '"' + text.replace(/"/g, '""') + '"';
+    }
+
     function renderSummaryCard(card) {
       const element = document.createElement('div');
       element.className = 'summary-card' + (card.tone ? ' ' + card.tone : '');
@@ -2572,6 +3058,22 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
         summary.appendChild(message);
         item.appendChild(summary);
 
+        const evidence = [
+          warning.entityName ? 'entity: ' + warning.entityName : '',
+          warning.path ? 'path: ' + warning.path : '',
+          warning.value ? 'value: ' + warning.value : '',
+          warning.jsonLdBlockIndex ? 'JSON-LD block #' + warning.jsonLdBlockIndex : '',
+          warning.sourceMode ? 'source: ' + warning.sourceMode : '',
+        ].filter(Boolean);
+
+        if (evidence.length > 0) {
+          const detail = document.createElement('p');
+          detail.className = 'meta';
+          detail.style.margin = '0';
+          detail.textContent = evidence.join(' / ');
+          item.appendChild(detail);
+        }
+
         warningCard.appendChild(item);
       });
 
@@ -2806,6 +3308,15 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
 
     function downloadJsonFile(payload, filename) {
       const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+      downloadBlob(blob, filename);
+    }
+
+    function downloadTextFile(text, filename, contentType) {
+      const blob = new Blob([text], { type: contentType || 'text/plain;charset=utf-8' });
+      downloadBlob(blob, filename);
+    }
+
+    function downloadBlob(blob, filename) {
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
       link.download = filename;
@@ -3714,6 +4225,7 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
     renderDiagnostics(reportData.detectedSyntaxErrors, document.getElementById('diagnostic-panel'));
     renderScrapeWarnings(reportData.scrapeWarnings, document.getElementById('scrape-warning-panel'));
     renderQualityWarnings(reportData.qualityWarnings, document.getElementById('quality-panel'));
+    renderSchemaInventory(reportData, document.getElementById('schema-inventory-root'));
     renderSemanticTreeViews();
     renderDeferredReportTab('health');
     document.querySelectorAll('.report-tab').forEach(tab => {

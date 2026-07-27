@@ -109,6 +109,7 @@ Line two"
         _meta: {
           sourceMode: 'rendered',
           extractionChannel: 'json-ld',
+          jsonLdBlockIndex: 1,
         },
       },
     ]);

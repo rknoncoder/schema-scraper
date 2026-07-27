@@ -95,6 +95,7 @@ describe('HTML report helpers', () => {
     expect(html).toContain('Untyped JSON-LD / Data Payload Blocks');
     expect(html).toContain('Resolved Entity Graph');
     expect(html).toContain('Raw Script Block Map');
+    expect(html).toContain('Schema Inventory');
     expect(html).toContain('Download PNG');
     expect(html).toContain('Download Detailed PNG');
     expect(html).toContain('Download Details JSON');
@@ -104,6 +105,9 @@ describe('HTML report helpers', () => {
     expect(script).toContain('function downloadSchemaMapDetailsJson()');
     expect(script).toContain('function schemaMapExportDetailLines(node)');
     expect(script).toContain('function prepareSchemaMapSvgForPngExport(svg, options)');
+    expect(script).toContain('function renderSchemaInventory(report, container)');
+    expect(script).toContain('function buildSchemaInventoryRows(report)');
+    expect(script).toContain('function inventoryRowsToCsv(rows)');
     expect(script).toContain('function isAnalyticsDataPayload(value)');
     expect(script).toContain('function schemaMapLabelSuffixLimit(type)');
     expect(script).toContain('const scale = 2;');

@@ -131,6 +131,7 @@ function discoveryMetaForItem(item: any): GraphEntityMeta | undefined {
   return {
     sourceMode: item.sourceMode,
     extractionChannel,
+    jsonLdBlockIndex: item.source === 'json-ld' ? item.jsonLdBlockIndex : undefined,
   };
 }
 

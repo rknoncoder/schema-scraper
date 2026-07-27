@@ -11,15 +11,51 @@ describe('schema quality auditor', () => {
     ])).toEqual([
       {
         entityType: 'Organization',
+        property: 'url',
+        severity: 'warning',
+        message: 'Relative URL found. Use absolute URLs so crawlers can parse relationships reliably.',
+        path: '$.url',
+        value: '/',
+      },
+      {
+        entityType: 'Organization',
         property: 'name',
         severity: 'warning',
         message: 'The organization profile exists but lacks an identity label ("name").',
       },
+    ]);
+  });
+
+  it('flags malformed nested URL-like schema fields with evidence', () => {
+    expect(auditSchemaQuality([
       {
-        entityType: 'Organization',
+        '@type': 'ItemList',
+        name: 'Residential Projects in Chennai',
+        itemListElement: [
+          {
+            '@type': 'ListItem',
+            name: 'Purva Raagam',
+            url: 'hhttps://www.puravankara.com/residential/chennai/purva-raagam',
+            position: 3,
+          },
+        ],
+        _meta: {
+          sourceMode: 'static',
+          extractionChannel: 'json-ld',
+          jsonLdBlockIndex: 5,
+        },
+      },
+    ])).toEqual([
+      {
+        entityType: 'ItemList',
         property: 'url',
         severity: 'warning',
-        message: 'Relative URLs found. Use absolute URLs so crawlers can parse relationships reliably.',
+        message: 'Unsupported URL scheme "hhttps" found. Use http:// or https:// for schema URL fields.',
+        path: '$.itemListElement[0].url',
+        value: 'hhttps://www.puravankara.com/residential/chennai/purva-raagam',
+        entityName: 'Residential Projects in Chennai',
+        sourceMode: 'static',
+        jsonLdBlockIndex: 5,
       },
     ]);
   });
