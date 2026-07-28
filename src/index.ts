@@ -69,6 +69,7 @@ export { auditSchemaQuality } from './analyzer/schemaQuality';
 export {
   auditGoogleEligibility,
   GOOGLE_RULES,
+  SUPPORTED_GOOGLE_FEATURES,
 } from './analyzer/googleRichResultValidator';
 export { validateAndParseJSON } from './analyzer/syntaxValidator';
 export {
@@ -85,8 +86,16 @@ export type {
 } from './analyzer/syntaxValidator';
 export type { QualityWarning } from './analyzer/schemaQuality';
 export type {
+  CandidateMode,
+  EitherOrFieldRule,
+  FieldRule,
+  FieldSeverity,
+  GoogleFeatureRule,
+  GoogleFeatureStatus,
   GoogleAuditResult,
+  GoogleFieldRule,
   GoogleRuleIssue,
   RichResultDefinition,
+  SchemaEntity,
   Severity,
 } from './analyzer/googleRichResultValidator';

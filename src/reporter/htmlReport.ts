@@ -33,7 +33,11 @@ function renderGoogleRichResultsPanel(results: GoogleAuditResult[]): string {
   ));
   const rows = results.map(result => `
       <tr>
-        <td><strong>${escapeHtml(result.type)}</strong></td>
+        <td>
+          <strong>${escapeHtml(result.featureName ?? result.type)}</strong>
+          ${result.featureName ? `<div class="meta">${escapeHtml(result.schemaType ?? result.type)}</div>` : ''}
+          ${result.docsUrl ? `<div class="meta"><a href="${escapeHtml(result.docsUrl)}" target="_blank" rel="noreferrer">Google docs</a></div>` : ''}
+        </td>
         <td>${escapeHtml(result.entityId ?? 'Unknown entity')}</td>
         <td><span class="rich-status rich-status-${result.status.toLowerCase()}">${escapeHtml(result.status)}</span></td>
         <td>${renderGoogleRichResultIssues(result)}</td>
@@ -49,7 +53,7 @@ function renderGoogleRichResultsPanel(results: GoogleAuditResult[]): string {
         ? `<table class="google-rich-table">
             <thead>
               <tr>
-                <th>Entity Type</th>
+                <th>Google Feature</th>
                 <th>Entity</th>
                 <th>Status</th>
                 <th>Issues</th>
