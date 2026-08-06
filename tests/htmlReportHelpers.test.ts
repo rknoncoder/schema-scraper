@@ -75,9 +75,40 @@ function sampleReport(): ResolvedAuditReport {
         crossBlockReferenceCount: 0,
         orphanReferenceCount: 0,
         parseErrorBlockCount: 0,
+        maxNodes: 420,
         truncated: false,
       },
     },
+    googleRichResults: [
+      {
+        entityId: '#product',
+        type: 'Product',
+        featureId: 'product-snippet',
+        featureName: 'Product snippet',
+        schemaType: 'Product',
+        status: 'Eligible',
+        issues: [],
+        docsUrl: 'https://developers.google.com/search/docs/appearance/structured-data/product-snippet',
+        sourceMode: 'static',
+        extractionChannel: 'json-ld',
+        jsonLdBlockIndex: 1,
+      },
+      {
+        entityId: '#video',
+        type: 'VideoObject',
+        featureId: 'video-object',
+        featureName: 'Video',
+        schemaType: 'VideoObject',
+        status: 'Ineligible',
+        issues: [
+          {
+            property: 'thumbnailUrl',
+            severity: 'error',
+            message: 'VideoObject is missing required Google field "thumbnailUrl".',
+          },
+        ],
+      },
+    ],
   };
 }
 
@@ -100,12 +131,23 @@ describe('HTML report helpers', () => {
     expect(html).toContain('Download Detailed PNG');
     expect(html).toContain('Download Details JSON');
     expect(html).toContain('Static vs Rendered Diff');
+    expect(script).toContain('visual cap');
+    expect(script).toContain('--raw-map-max-nodes 1000');
+    expect(html).toContain('Google Feature');
+    expect(html).toContain('google-rich-search');
+    expect(html).toContain('google-rich-feature-filter');
+    expect(html).toContain('View block');
+    expect(html).toContain('data-inventory-block="1"');
+    expect(html).toContain('Required Errors');
+    expect(html).toContain('Recommended Warnings');
     expect(script).toContain('function downloadCurrentSchemaMapPng()');
     expect(script).toContain('function downloadDetailedSchemaMapPng()');
     expect(script).toContain('function downloadSchemaMapDetailsJson()');
     expect(script).toContain('function schemaMapExportDetailLines(node)');
     expect(script).toContain('function prepareSchemaMapSvgForPngExport(svg, options)');
     expect(script).toContain('function renderSchemaInventory(report, container)');
+    expect(script).toContain('function initializeGoogleRichResultFilters()');
+    expect(script).toContain('function jumpToSchemaInventoryBlock(blockIndex)');
     expect(script).toContain('function buildSchemaInventoryRows(report)');
     expect(script).toContain('function inventoryRowsToCsv(rows)');
     expect(script).toContain('function isAnalyticsDataPayload(value)');

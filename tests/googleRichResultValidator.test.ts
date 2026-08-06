@@ -18,6 +18,7 @@ describe('google rich result validator', () => {
           price: '10.00',
           priceCurrency: 'USD',
           availability: 'https://schema.org/InStock',
+          priceValidUntil: '2027-01-01',
         },
       },
     ]);
@@ -27,6 +28,31 @@ describe('google rich result validator', () => {
       type: 'Product',
       status: 'Eligible',
       issues: [],
+    });
+  });
+
+  it('preserves source metadata on Google feature rows', () => {
+    const [result] = auditGoogleEligibility([
+      {
+        '@type': 'Product',
+        name: 'Source Product',
+        offers: {
+          '@type': 'Offer',
+          price: '10.00',
+          priceCurrency: 'USD',
+        },
+        _meta: {
+          sourceMode: 'rendered',
+          extractionChannel: 'json-ld',
+          jsonLdBlockIndex: 7,
+        },
+      },
+    ]);
+
+    expect(result).toMatchObject({
+      sourceMode: 'rendered',
+      extractionChannel: 'json-ld',
+      jsonLdBlockIndex: 7,
     });
   });
 
@@ -73,6 +99,59 @@ describe('google rich result validator', () => {
       'Merchant listing',
     ]);
     expect(results.every(result => result.status === 'Eligible')).toBe(true);
+  });
+
+  it('folds nested Offer issues into Product feature rows', () => {
+    const results = auditGoogleEligibility([
+      {
+        '@type': 'Product',
+        name: 'Merchant Product',
+        image: 'https://example.com/product.jpg',
+        brand: { '@type': 'Brand', name: 'Example Brand' },
+        gtin: '1234567890123',
+        offers: {
+          '@type': 'Offer',
+          price: '10.00',
+        },
+      },
+    ]);
+
+    const productSnippet = results.find(result => result.featureName === 'Product snippet');
+    const merchantListing = results.find(result => result.featureName === 'Merchant listing');
+
+    expect(productSnippet?.status).toBe('Eligible');
+    expect(productSnippet?.issues).toContainEqual({
+      property: 'offers.priceCurrency|priceSpecification.priceCurrency',
+      severity: 'warning',
+      message: '[Offer details] Offer should include priceCurrency or priceSpecification.priceCurrency.',
+    });
+    expect(merchantListing?.status).toBe('Ineligible');
+    expect(merchantListing?.issues).toContainEqual({
+      property: 'offers.priceCurrency|priceSpecification.priceCurrency',
+      severity: 'error',
+      message: '[Merchant offer details] Merchant listing Offer needs priceCurrency or priceSpecification.priceCurrency.',
+    });
+  });
+
+  it('folds nested AggregateRating issues into Product snippet rows', () => {
+    const [result] = auditGoogleEligibility([
+      {
+        '@type': 'Product',
+        name: 'Rated Product',
+        image: 'https://example.com/product.jpg',
+        aggregateRating: {
+          '@type': 'AggregateRating',
+          ratingValue: '4.5',
+        },
+      },
+    ]);
+
+    expect(result.status).toBe('Ineligible');
+    expect(result.issues).toContainEqual({
+      property: 'aggregateRating.reviewCount|ratingCount',
+      severity: 'error',
+      message: '[Review snippet aggregate rating] AggregateRating needs reviewCount or ratingCount.',
+    });
   });
 
   it('checks ProductGroup as a Product variants feature', () => {
@@ -227,6 +306,66 @@ describe('google rich result validator', () => {
       property: 'contentUrl|embedUrl',
       severity: 'warning',
       message: 'VideoObject should include contentUrl or embedUrl so Google can access the video content.',
+    });
+  });
+
+  it('folds nested Clip issues into Video rows', () => {
+    const [result] = auditGoogleEligibility([
+      {
+        '@type': 'VideoObject',
+        name: 'Video with key moments',
+        description: 'A video with incomplete key moment markup.',
+        thumbnailUrl: 'https://example.com/thumb.jpg',
+        uploadDate: '2026-07-01T10:00:00+05:30',
+        duration: 'PT1M',
+        contentUrl: 'https://example.com/video.mp4',
+        interactionStatistic: {
+          '@type': 'InteractionCounter',
+          userInteractionCount: 1200,
+        },
+        hasPart: {
+          '@type': 'Clip',
+          name: 'Intro',
+          startOffset: 0,
+        },
+      },
+    ]);
+
+    expect(result.status).toBe('Ineligible');
+    expect(result.issues).toContainEqual({
+      property: 'hasPart.url',
+      severity: 'error',
+      message: '[Clip key moments] Clip key moments is missing required Google field "url".',
+    });
+  });
+
+  it('folds nested BroadcastEvent issues into Video rows', () => {
+    const [result] = auditGoogleEligibility([
+      {
+        '@type': 'VideoObject',
+        name: 'Live video',
+        description: 'A video with incomplete live badge markup.',
+        thumbnailUrl: 'https://example.com/thumb.jpg',
+        uploadDate: '2026-07-01T10:00:00+05:30',
+        duration: 'PT1M',
+        embedUrl: 'https://example.com/embed/live',
+        interactionStatistic: {
+          '@type': 'InteractionCounter',
+          userInteractionCount: 1200,
+        },
+        publication: {
+          '@type': 'BroadcastEvent',
+          isLiveBroadcast: true,
+          startDate: '2026-07-01T10:00:00+05:30',
+        },
+      },
+    ]);
+
+    expect(result.status).toBe('Ineligible');
+    expect(result.issues).toContainEqual({
+      property: 'publication.endDate',
+      severity: 'error',
+      message: '[LIVE badge] LIVE badge is missing required Google field "endDate".',
     });
   });
 });

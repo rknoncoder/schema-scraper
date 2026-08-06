@@ -31,17 +31,32 @@ function renderGoogleRichResultsPanel(results: GoogleAuditResult[]): string {
       .map(result => result.notice)
       .filter((notice): notice is string => Boolean(notice))
   ));
-  const rows = results.map(result => `
-      <tr>
+  const summary = googleRichResultSummary(results);
+  const featureOptions = Array.from(new Set(
+    results.map(result => result.featureName ?? result.type).filter(Boolean)
+  )).sort((a, b) => a.localeCompare(b));
+  const rows = results.map(result => {
+    const featureName = result.featureName ?? result.type;
+    const errorCount = result.issues.filter(issue => issue.severity === 'error').length;
+    const warningCount = result.issues.filter(issue => issue.severity === 'warning').length;
+
+    return `
+      <tr class="google-rich-row"
+        data-feature="${escapeHtml(featureName)}"
+        data-status="${escapeHtml(result.status)}"
+        data-errors="${errorCount}"
+        data-warnings="${warningCount}">
         <td>
-          <strong>${escapeHtml(result.featureName ?? result.type)}</strong>
+          <strong>${escapeHtml(featureName)}</strong>
           ${result.featureName ? `<div class="meta">${escapeHtml(result.schemaType ?? result.type)}</div>` : ''}
           ${result.docsUrl ? `<div class="meta"><a href="${escapeHtml(result.docsUrl)}" target="_blank" rel="noreferrer">Google docs</a></div>` : ''}
         </td>
         <td>${escapeHtml(result.entityId ?? 'Unknown entity')}</td>
         <td><span class="rich-status rich-status-${result.status.toLowerCase()}">${escapeHtml(result.status)}</span></td>
+        <td>${renderGoogleRichResultSource(result)}</td>
         <td>${renderGoogleRichResultIssues(result)}</td>
-      </tr>`).join('');
+      </tr>`;
+  }).join('');
 
   return `
   <div id="tab-panel-google-rich" class="tab-panel" role="tabpanel">
@@ -50,12 +65,43 @@ function renderGoogleRichResultsPanel(results: GoogleAuditResult[]): string {
       <p class="meta">Eligibility audit based on supported Google rich result fields. This is a local preflight check, not a replacement for Google's live Rich Results Test.</p>
       ${notices.map(notice => `<div class="rich-deprecation-notice">${escapeHtml(notice)}</div>`).join('')}
       ${results.length > 0
-        ? `<table class="google-rich-table">
+        ? `<div class="google-rich-summary" aria-label="Google rich result summary">
+            ${renderGoogleRichSummaryCard('Features Checked', summary.total)}
+            ${renderGoogleRichSummaryCard('Eligible', summary.eligible, 'eligible')}
+            ${renderGoogleRichSummaryCard('Ineligible', summary.ineligible, 'ineligible')}
+            ${renderGoogleRichSummaryCard('Deprecated', summary.deprecated, 'deprecated')}
+            ${renderGoogleRichSummaryCard('Required Errors', summary.errors, 'error')}
+            ${renderGoogleRichSummaryCard('Recommended Warnings', summary.warnings, 'warning')}
+          </div>
+          <div class="google-rich-controls" aria-label="Google rich result filters">
+            <input id="google-rich-search" type="search" placeholder="Search feature, entity, issue...">
+            <select id="google-rich-feature-filter">
+              <option value="">All features</option>
+              ${featureOptions.map(feature => `<option value="${escapeHtml(feature)}">${escapeHtml(feature)}</option>`).join('')}
+            </select>
+            <select id="google-rich-status-filter">
+              <option value="">All statuses</option>
+              <option value="Eligible">Eligible</option>
+              <option value="Ineligible">Ineligible</option>
+              <option value="Deprecated">Deprecated</option>
+            </select>
+            <select id="google-rich-issue-filter">
+              <option value="">All rows</option>
+              <option value="issues">Rows with issues</option>
+              <option value="errors">Required errors only</option>
+              <option value="warnings">Recommended warnings only</option>
+              <option value="clean">No issues</option>
+            </select>
+            <button type="button" id="google-rich-reset-filters">Reset filters</button>
+            <span id="google-rich-visible-count" class="export-status">${results.length} of ${results.length} rows</span>
+          </div>
+          <table class="google-rich-table" id="google-rich-results-table">
             <thead>
               <tr>
                 <th>Google Feature</th>
                 <th>Entity</th>
                 <th>Status</th>
+                <th>Source</th>
                 <th>Issues</th>
               </tr>
             </thead>
@@ -64,6 +110,43 @@ function renderGoogleRichResultsPanel(results: GoogleAuditResult[]): string {
         : '<p class="meta">No supported Google rich result entity types were found in the resolved graph.</p>'}
     </section>
   </div>`;
+}
+
+function googleRichResultSummary(results: GoogleAuditResult[]) {
+  return {
+    total: results.length,
+    eligible: results.filter(result => result.status === 'Eligible').length,
+    ineligible: results.filter(result => result.status === 'Ineligible').length,
+    deprecated: results.filter(result => result.status === 'Deprecated').length,
+    errors: results.reduce((total, result) => total + result.issues.filter(issue => issue.severity === 'error').length, 0),
+    warnings: results.reduce((total, result) => total + result.issues.filter(issue => issue.severity === 'warning').length, 0),
+  };
+}
+
+function renderGoogleRichSummaryCard(label: string, value: number, tone = ''): string {
+  return `
+    <div class="google-rich-summary-card ${tone ? `google-rich-summary-card-${tone}` : ''}">
+      <div class="google-rich-summary-value">${value}</div>
+      <div class="google-rich-summary-label">${escapeHtml(label)}</div>
+    </div>`;
+}
+
+function renderGoogleRichResultSource(result: GoogleAuditResult): string {
+  const sourceParts = [
+    result.sourceMode,
+    result.extractionChannel,
+    result.jsonLdBlockIndex ? `Block #${result.jsonLdBlockIndex}` : undefined,
+  ].filter((value): value is string => Boolean(value));
+
+  if (sourceParts.length === 0) {
+    return '<span class="meta">Unknown</span>';
+  }
+
+  return `
+    <div>${escapeHtml(sourceParts.join(' / '))}</div>
+    ${result.jsonLdBlockIndex
+      ? `<button type="button" class="google-rich-evidence-link" data-inventory-block="${result.jsonLdBlockIndex}">View block</button>`
+      : ''}`;
 }
 
 function renderGoogleRichResultIssues(result: GoogleAuditResult): string {
@@ -1037,6 +1120,62 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
     .google-rich-table tr:last-child td {
       border-bottom: 0;
     }
+    .google-rich-summary {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      margin: 16px 0;
+    }
+    .google-rich-summary-card {
+      background: #f8fafc;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .google-rich-summary-value {
+      color: #0f172a;
+      font-size: 1.35rem;
+      font-weight: 900;
+      line-height: 1;
+    }
+    .google-rich-summary-label {
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-weight: 800;
+      margin-top: 6px;
+      text-transform: uppercase;
+    }
+    .google-rich-summary-card-eligible .google-rich-summary-value { color: #166534; }
+    .google-rich-summary-card-ineligible .google-rich-summary-value,
+    .google-rich-summary-card-error .google-rich-summary-value { color: #991b1b; }
+    .google-rich-summary-card-deprecated .google-rich-summary-value,
+    .google-rich-summary-card-warning .google-rich-summary-value { color: #92400e; }
+    .google-rich-controls {
+      align-items: center;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 12px 0 16px;
+    }
+    .google-rich-controls input,
+    .google-rich-controls select {
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      min-height: 34px;
+      padding: 7px 9px;
+    }
+    .google-rich-controls input {
+      min-width: 280px;
+    }
+    .google-rich-row.hidden {
+      display: none;
+    }
+    .google-rich-evidence-link {
+      font-size: 0.78rem;
+      margin-top: 6px;
+      padding: 4px 8px;
+    }
     .inventory-toolbar {
       align-items: center;
       display: flex;
@@ -1111,6 +1250,10 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
     .inventory-badge-warning { background: #fef3c7; color: #92400e; }
     .inventory-badge-error { background: #fee2e2; color: #991b1b; }
     .inventory-detail-row.hidden { display: none; }
+    .schema-inventory-table tr.inventory-highlight > td {
+      background: #eff6ff;
+      box-shadow: inset 3px 0 0 var(--accent);
+    }
     .inventory-detail-row pre {
       background: #f8fafc;
       color: var(--text);
@@ -1573,7 +1716,9 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
         + (summary.internalParentChildLinkCount || 0) + ' internal parent-child links / '
         + (summary.crossBlockReferenceCount || 0) + ' cross-block refs / '
         + (summary.orphanReferenceCount || 0) + ' orphan refs'
-        + (summary.truncated ? ' / truncated' : '');
+        + ' / visual cap ' + (summary.maxNodes || 420) + ' nodes'
+        + (summary.truncated ? ' / truncated at visual cap' : '')
+        + '. Full raw JSON-LD remains available in Schema Inventory and report JSON. Increase with --raw-map-max-nodes 1000.';
       mountSchemaMapGraph(graph, container, summaryText);
     }
 
@@ -2498,6 +2643,96 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
       drawTable();
     }
 
+    function initializeGoogleRichResultFilters() {
+      const table = document.getElementById('google-rich-results-table');
+      if (!table) return;
+
+      const rows = Array.from(table.querySelectorAll('.google-rich-row'));
+      const search = document.getElementById('google-rich-search');
+      const featureFilter = document.getElementById('google-rich-feature-filter');
+      const statusFilter = document.getElementById('google-rich-status-filter');
+      const issueFilter = document.getElementById('google-rich-issue-filter');
+      const reset = document.getElementById('google-rich-reset-filters');
+      const visibleCount = document.getElementById('google-rich-visible-count');
+      const controls = [search, featureFilter, statusFilter, issueFilter].filter(Boolean);
+
+      function rowMatches(row) {
+        const query = search ? search.value.trim().toLowerCase() : '';
+        const feature = featureFilter ? featureFilter.value : '';
+        const status = statusFilter ? statusFilter.value : '';
+        const issueMode = issueFilter ? issueFilter.value : '';
+        const errorCount = Number(row.dataset.errors || '0');
+        const warningCount = Number(row.dataset.warnings || '0');
+
+        if (feature && row.dataset.feature !== feature) return false;
+        if (status && row.dataset.status !== status) return false;
+        if (issueMode === 'issues' && errorCount + warningCount === 0) return false;
+        if (issueMode === 'errors' && errorCount === 0) return false;
+        if (issueMode === 'warnings' && warningCount === 0) return false;
+        if (issueMode === 'clean' && errorCount + warningCount > 0) return false;
+        if (!query) return true;
+        return row.textContent.toLowerCase().includes(query);
+      }
+
+      function applyFilters() {
+        let shown = 0;
+        rows.forEach(row => {
+          const visible = rowMatches(row);
+          row.classList.toggle('hidden', !visible);
+          if (visible) shown += 1;
+        });
+        if (visibleCount) {
+          visibleCount.textContent = shown + ' of ' + rows.length + ' rows';
+        }
+      }
+
+      controls.forEach(control => {
+        control.addEventListener('input', applyFilters);
+        control.addEventListener('change', applyFilters);
+      });
+
+      if (reset) {
+        reset.addEventListener('click', () => {
+          controls.forEach(control => {
+            control.value = '';
+          });
+          applyFilters();
+        });
+      }
+
+      document.querySelectorAll('.google-rich-evidence-link').forEach(button => {
+        button.addEventListener('click', () => {
+          jumpToSchemaInventoryBlock(button.dataset.inventoryBlock);
+        });
+      });
+
+      applyFilters();
+    }
+
+    function jumpToSchemaInventoryBlock(blockIndex) {
+      if (!blockIndex) return;
+
+      setActiveReportTab('inventory');
+
+      const search = document.getElementById('schema-inventory-search');
+      const formatFilter = document.getElementById('schema-inventory-format');
+      const statusFilter = document.getElementById('schema-inventory-status');
+      if (search) search.value = 'Block #' + blockIndex;
+      if (formatFilter) formatFilter.value = '';
+      if (statusFilter) statusFilter.value = '';
+      if (search) search.dispatchEvent(new Event('input', { bubbles: true }));
+
+      window.setTimeout(() => {
+        const target = document.getElementById('schema-inventory-block-' + blockIndex);
+        if (!target) return;
+        document.querySelectorAll('.inventory-highlight').forEach(row => {
+          row.classList.remove('inventory-highlight');
+        });
+        target.classList.add('inventory-highlight');
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 50);
+    }
+
     function renderSchemaInventoryTable(rows) {
       const table = document.createElement('table');
       table.className = 'schema-inventory-table';
@@ -2526,6 +2761,10 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
 
       rows.forEach(row => {
         const tr = document.createElement('tr');
+        if (row.blockIndex) {
+          tr.id = 'schema-inventory-block-' + row.blockIndex;
+          tr.dataset.inventoryBlock = String(row.blockIndex);
+        }
         tr.appendChild(inventoryNameCell(row));
         tr.appendChild(inventoryTextCell(row.formatLabel));
         tr.appendChild(inventoryTextCell(row.blockLabel));
@@ -2643,6 +2882,7 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
           name: classification,
           formatLabel: 'JSON-LD',
           blockLabel: blockIndex ? 'Block #' + blockIndex : 'Block',
+          blockIndex,
           errorCount: syntaxErrors.length,
           warningCount,
           validCount: status === 'valid' ? 1 : 0,
@@ -2684,6 +2924,7 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
           name: schemaMapNodeLabel(entity),
           formatLabel: channel === 'microdata' ? 'Microdata' : 'RDFa',
           blockLabel: 'Entity #' + (index + 1),
+          blockIndex: 0,
           errorCount: 0,
           warningCount: 0,
           validCount: 1,
@@ -2705,6 +2946,7 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
             name: schemaMapNodeLabel(entity),
             formatLabel: 'Resolved',
             blockLabel: 'Entity #' + (index + 1),
+            blockIndex: 0,
             errorCount: 0,
             warningCount: 0,
             validCount: 1,
@@ -4230,6 +4472,7 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
     renderScrapeWarnings(reportData.scrapeWarnings, document.getElementById('scrape-warning-panel'));
     renderQualityWarnings(reportData.qualityWarnings, document.getElementById('quality-panel'));
     renderSchemaInventory(reportData, document.getElementById('schema-inventory-root'));
+    initializeGoogleRichResultFilters();
     renderSemanticTreeViews();
     renderDeferredReportTab('health');
     document.querySelectorAll('.report-tab').forEach(tab => {

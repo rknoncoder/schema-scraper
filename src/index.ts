@@ -14,9 +14,13 @@ export {
 export { TextReporter } from './reporter/textReporter';
 export { renderHtmlReport } from './reporter/htmlReport';
 export type { ResolvedAuditReport } from './reporter/htmlReport';
-export { buildRawJsonLdBlockMap } from './reporter/rawJsonLdBlockMap';
+export {
+  buildRawJsonLdBlockMap,
+  DEFAULT_RAW_MAP_MAX_NODES,
+} from './reporter/rawJsonLdBlockMap';
 export type {
   RawJsonLdBlockMap,
+  RawJsonLdBlockMapOptions,
   RawJsonLdBlockMapSummary,
   RawJsonLdMapLink,
   RawJsonLdMapNode,

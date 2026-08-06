@@ -150,6 +150,7 @@ Example:
   "deepRender": true,
   "timeoutMs": 60000,
   "googleRichResults": true,
+  "rawMapMaxNodes": 1000,
   "format": "html",
   "outputDir": "reports",
   "concurrency": 2
@@ -240,6 +241,8 @@ The HTML report provides:
 - a system-fields toggle for `@context` and `_meta`
 - copy and download actions for normalized graph-ready JSON-LD
 - a collapsible, zoomable relationship map with mouse-wheel zoom and panning
+- a raw script block map that is visually capped for performance while keeping
+  the full raw JSON-LD available in inventory/export data
 - a layered semantic DAG with shared identity hubs and metadata-leaf pruning
 - ItemList position-gap warnings and metadata leaf previews
 
@@ -276,10 +279,10 @@ npm run cli -- --url "https://example.com" --dual-pass --google-rich-results --f
 npm run cli -- --url "https://example.com" --graph-ready --google-rich-results
 ```
 
-The audit checks supported entity types such as `Product`, `BreadcrumbList`,
-`Organization`, `LocalBusiness`, and `Article` for required and recommended
-fields. `FAQPage` is detected as deprecated for standard Google Search rich
-results and is shown with a notice.
+The audit checks supported entity types such as `Product`, `VideoObject`,
+`BreadcrumbList`, `Organization`, `LocalBusiness`, and `Article` for required
+and recommended fields. `FAQPage` is detected as deprecated for standard
+Google Search rich results and is shown with a notice.
 
 This is a local eligibility layer. Use Google's live Rich Results Test for
 final Search validation.
@@ -304,6 +307,10 @@ final Search validation.
 | `--stdin` | Read JSON-LD from standard input |
 | `--graph-ready` | Print homogenized entities and syntax results |
 | `--google-rich-results` | Add a Google rich result eligibility audit to JSON/stdout/HTML reports |
+| `--include-google-rich-results` | Alias for `--google-rich-results` |
+| `--raw-map-max-nodes <count>` | Set the Raw Script Block Map visual node cap; default is 420 |
+| `--no-raw-map` | Skip Raw Script Block Map data in full JSON/HTML reports |
+| `--include-raw-map` | Re-enable Raw Script Block Map data after config disables it |
 | `--tree` | Print the resolved tree in the terminal |
 | `--format json\|html` | Generate a complete JSON or HTML audit report |
 | `-o, --output <path>` | Write report output to a file |

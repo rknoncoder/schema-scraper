@@ -42,6 +42,7 @@ export interface RawJsonLdBlockMapSummary {
   crossBlockReferenceCount: number;
   orphanReferenceCount: number;
   parseErrorBlockCount: number;
+  maxNodes: number;
   truncated: boolean;
 }
 
@@ -62,11 +63,17 @@ interface DefinitionCandidate {
   blockIndex: number;
 }
 
-const MAX_RAW_MAP_NODES = 420;
+export const DEFAULT_RAW_MAP_MAX_NODES = 420;
+
+export interface RawJsonLdBlockMapOptions {
+  maxNodes?: number;
+}
 
 export function buildRawJsonLdBlockMap(
-  schemas: RawSchemaBlock[]
+  schemas: RawSchemaBlock[],
+  options: RawJsonLdBlockMapOptions = {}
 ): RawJsonLdBlockMap {
+  const maxNodes = normalizeMaxNodes(options.maxNodes);
   const jsonLdSchemas = schemas.filter(schema => schema.source === 'json-ld');
   const nodes: RawJsonLdMapNode[] = [];
   const links: RawJsonLdMapLink[] = [];
@@ -82,7 +89,7 @@ export function buildRawJsonLdBlockMap(
   const duplicateTypes = duplicatedValues(rootTypesByBlock.flatMap(entry => entry.types));
 
   function pushNode(node: RawJsonLdMapNode): boolean {
-    if (nodes.length >= MAX_RAW_MAP_NODES) {
+    if (nodes.length >= maxNodes) {
       truncated = true;
       return false;
     }
@@ -127,8 +134,7 @@ export function buildRawJsonLdBlockMap(
         ? 'warning'
         : 'ok';
 
-    blockNodeIds.set(blockIndex, blockId);
-    pushNode({
+    const blockAdded = pushNode({
       id: blockId,
       label: `Block #${blockIndex}: ${classification}`,
       type: rootTypes[0] ?? classification,
@@ -148,8 +154,11 @@ export function buildRawJsonLdBlockMap(
         message: schema.parseError ?? schema.syntaxError?.message,
       }),
     });
+    if (blockAdded) {
+      blockNodeIds.set(blockIndex, blockId);
+    }
 
-    if (schema.parseError || !schema.data) return;
+    if (!blockAdded || schema.parseError || !schema.data) return;
 
     visitRawValue({
       value: schema.data,
@@ -222,6 +231,7 @@ export function buildRawJsonLdBlockMap(
       crossBlockReferenceCount: links.filter(link => link.kind === 'cross-block-reference').length,
       orphanReferenceCount: nodes.filter(node => node.badges.includes('Orphan Reference')).length,
       parseErrorBlockCount: jsonLdSchemas.filter(schema => Boolean(schema.parseError)).length,
+      maxNodes,
       truncated,
     },
   };
@@ -338,6 +348,14 @@ export function buildRawJsonLdBlockMap(
     addLink({ sourceId: parentId, targetId: id, label: edgeLabel, kind: 'contains', status: 'ok' });
     return id;
   }
+}
+
+function normalizeMaxNodes(value: number | undefined): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    return DEFAULT_RAW_MAP_MAX_NODES;
+  }
+
+  return Math.floor(value);
 }
 
 function blockBadges(

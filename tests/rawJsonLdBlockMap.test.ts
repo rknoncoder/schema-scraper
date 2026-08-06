@@ -18,6 +18,7 @@ describe('raw JSON-LD block map', () => {
       blockCount: 2,
       typedBlockCount: 1,
       untypedBlockCount: 1,
+      maxNodes: 420,
       noCrossBlockIdLinkBlockCount: 2,
       analyticsPayloadBlockCount: 1,
     });
@@ -82,6 +83,31 @@ describe('raw JSON-LD block map', () => {
       badges: expect.arrayContaining(['@id Reference', 'Cross-Block Ref']),
     });
     expect(map.nodes.filter(node => node.kind === 'block')).toHaveLength(2);
+  });
+
+  it('honors a custom visual node cap without changing block diagnostics', () => {
+    const schemas = extractSchemasFromHtml(`
+      <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "ItemList",
+          "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "One" },
+            { "@type": "ListItem", "position": 2, "name": "Two" }
+          ]
+        }
+      </script>
+    `, 'static');
+
+    const map = buildRawJsonLdBlockMap(schemas, { maxNodes: 2 });
+
+    expect(map.nodes).toHaveLength(2);
+    expect(map.summary).toMatchObject({
+      blockCount: 1,
+      typedBlockCount: 1,
+      maxNodes: 2,
+      truncated: true,
+    });
   });
 
   it('marks missing @id references as orphan references', () => {

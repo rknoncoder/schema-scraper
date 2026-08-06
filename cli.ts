@@ -23,7 +23,10 @@ import {
   type GraphEntity,
 } from './src';
 import { renderHtmlReport, type ResolvedAuditReport } from './src/reporter/htmlReport';
-import { buildRawJsonLdBlockMap } from './src/reporter/rawJsonLdBlockMap';
+import {
+  buildRawJsonLdBlockMap,
+  DEFAULT_RAW_MAP_MAX_NODES,
+} from './src/reporter/rawJsonLdBlockMap';
 import chalk from 'chalk';
 
 export { renderHtmlReport, type ResolvedAuditReport };
@@ -41,10 +44,12 @@ interface CliOptions {
   format?: ExportFormat;
   graphReady: boolean;
   googleRichResults: boolean;
+  includeRawMap: boolean;
   jsonLd?: string;
   jsonLdFile?: string;
   output?: string;
   outputDir?: string;
+  rawMapMaxNodes: number;
   renderMode?: ScrapeRenderMode;
   stdin: boolean;
   timeoutMs?: number;
@@ -64,6 +69,8 @@ interface SchemaScraperConfig {
   compact?: boolean;
   graphReady?: boolean;
   googleRichResults?: boolean;
+  includeRawMap?: boolean;
+  rawMapMaxNodes?: number;
   tree?: boolean;
   concurrency?: number;
 }
@@ -114,6 +121,8 @@ async function main(argv = process.argv): Promise<void> {
     if (options.output || options.format) {
       const report = buildResolvedAuditReport(extractedData, {
         includeGoogleRichResults: options.googleRichResults,
+        includeRawMap: options.includeRawMap,
+        rawMapMaxNodes: options.rawMapMaxNodes,
       });
       const format = options.format ?? inferFormatFromOutput(options.output) ?? 'json';
       const content = format === 'html'
@@ -239,7 +248,7 @@ function parseArgs(args: string[], initialOptions = createDefaultOptions()): Cli
     }
 
     parseStandardArg(args, index, options);
-    if (arg === '--jsonld-file' || arg === '--input' || arg === '--jsonld' || arg === '--timeout' || arg === '--format' || arg === '-o' || arg === '--output') {
+    if (arg === '--jsonld-file' || arg === '--input' || arg === '--jsonld' || arg === '--timeout' || arg === '--format' || arg === '-o' || arg === '--output' || arg === '--raw-map-max-nodes') {
       index += 1;
     }
   }
@@ -254,6 +263,8 @@ function createDefaultOptions(): CliOptions {
     deepRender: false,
     graphReady: false,
     googleRichResults: false,
+    includeRawMap: true,
+    rawMapMaxNodes: DEFAULT_RAW_MAP_MAX_NODES,
     stdin: false,
     tree: false,
     urls: [],
@@ -273,8 +284,18 @@ function parseStandardArg(args: string[], index: number, options: CliOptions): v
     return;
   }
 
-  if (arg === '--google-rich-results') {
+  if (arg === '--google-rich-results' || arg === '--include-google-rich-results') {
     options.googleRichResults = true;
+    return;
+  }
+
+  if (arg === '--include-raw-map') {
+    options.includeRawMap = true;
+    return;
+  }
+
+  if (arg === '--no-raw-map') {
+    options.includeRawMap = false;
     return;
   }
 
@@ -333,6 +354,16 @@ function parseStandardArg(args: string[], index: number, options: CliOptions): v
     return;
   }
 
+  if (arg === '--raw-map-max-nodes') {
+    options.rawMapMaxNodes = parsePositiveInteger(args[index + 1], 'raw-map-max-nodes');
+    return;
+  }
+
+  if (arg.startsWith('--raw-map-max-nodes=')) {
+    options.rawMapMaxNodes = parsePositiveInteger(arg.slice('--raw-map-max-nodes='.length), 'raw-map-max-nodes');
+    return;
+  }
+
   if (arg === '--static') {
     options.renderMode = 'static';
     return;
@@ -371,6 +402,8 @@ function optionsFromConfig(config: SchemaScraperConfig, configFile?: string): Cl
     deepRender: false,
     graphReady: false,
     googleRichResults: false,
+    includeRawMap: true,
+    rawMapMaxNodes: DEFAULT_RAW_MAP_MAX_NODES,
     stdin: false,
     tree: false,
     urls: [],
@@ -390,6 +423,8 @@ function optionsFromConfig(config: SchemaScraperConfig, configFile?: string): Cl
   if (typeof config.compact === 'boolean') options.compact = config.compact;
   if (typeof config.graphReady === 'boolean') options.graphReady = config.graphReady;
   if (typeof config.googleRichResults === 'boolean') options.googleRichResults = config.googleRichResults;
+  if (typeof config.includeRawMap === 'boolean') options.includeRawMap = config.includeRawMap;
+  if (typeof config.rawMapMaxNodes === 'number') options.rawMapMaxNodes = parsePositiveInteger(String(config.rawMapMaxNodes), 'rawMapMaxNodes');
   if (typeof config.tree === 'boolean') options.tree = config.tree;
   if (typeof config.concurrency === 'number') options.concurrency = parsePositiveInteger(String(config.concurrency), 'concurrency');
 
@@ -537,6 +572,8 @@ async function auditBatchUrl(
     });
     const report = buildResolvedAuditReport(extractedData, {
       includeGoogleRichResults: options.googleRichResults,
+      includeRawMap: options.includeRawMap,
+      rawMapMaxNodes: options.rawMapMaxNodes,
     });
     const content = format === 'html'
       ? renderHtmlReport(report)
@@ -608,6 +645,8 @@ function timestampForPath(date: Date): string {
 
 interface BuildResolvedAuditReportOptions {
   includeGoogleRichResults?: boolean;
+  includeRawMap?: boolean;
+  rawMapMaxNodes?: number;
 }
 
 function buildResolvedAuditReport(
@@ -650,7 +689,11 @@ function buildResolvedAuditReport(
     health,
     staticRenderedDiff: extractedData.staticRenderedDiff ?? null,
     jsonLdDiagnostics: extractedData.jsonLdDiagnostics,
-    rawJsonLdBlockMap: buildRawJsonLdBlockMap(extractedData.schemas),
+    rawJsonLdBlockMap: options.includeRawMap === false
+      ? null
+      : buildRawJsonLdBlockMap(extractedData.schemas, {
+        maxNodes: options.rawMapMaxNodes,
+      }),
   };
 
   if (options.includeGoogleRichResults) {
@@ -670,7 +713,11 @@ function buildStdoutPayload(
       : extractedData;
   }
 
-  const report = buildResolvedAuditReport(extractedData, { includeGoogleRichResults: true });
+  const report = buildResolvedAuditReport(extractedData, {
+    includeGoogleRichResults: true,
+    includeRawMap: options.includeRawMap,
+    rawMapMaxNodes: options.rawMapMaxNodes,
+  });
   const basePayload = options.graphReady
     ? processRawPayload(extractedData)
     : extractedData;

@@ -25,7 +25,7 @@ export interface EitherOrFieldRule {
 export type GoogleFieldRule = FieldRule | EitherOrFieldRule;
 
 export interface NestedEnhancement {
-  hostFeatureId: string;
+  hostFeatureId: string | string[];
   hostProperty: string;
   optional: boolean;
 }
@@ -63,6 +63,9 @@ export interface GoogleAuditResult {
   featureName?: string;
   schemaType?: string;
   docsUrl?: string;
+  sourceMode?: string;
+  extractionChannel?: string;
+  jsonLdBlockIndex?: number;
 }
 
 export type SchemaEntity = Record<string, unknown>;
@@ -304,6 +307,154 @@ export const SUPPORTED_GOOGLE_FEATURES: GoogleFeatureRule[] = [
     ],
     docsUrl: 'https://developers.google.com/search/docs/appearance/structured-data/software-app',
   },
+  {
+    featureId: 'product-snippet-offer',
+    featureName: 'Offer details',
+    schemaTypes: ['Offer'],
+    candidateMode: 'nested-enhancement',
+    nestedIn: {
+      hostFeatureId: 'product-snippet',
+      hostProperty: 'offers',
+      optional: true,
+    },
+    fields: [
+      {
+        properties: ['price', 'priceSpecification.price'],
+        severity: 'required',
+        message: 'Offer needs either price or priceSpecification.price.',
+      },
+      {
+        properties: ['priceCurrency', 'priceSpecification.priceCurrency'],
+        severity: 'recommended',
+        message: 'Offer should include priceCurrency or priceSpecification.priceCurrency.',
+      },
+      { property: 'availability', severity: 'recommended' },
+      { property: 'priceValidUntil', severity: 'recommended' },
+    ],
+    docsUrl: 'https://developers.google.com/search/docs/appearance/structured-data/product-snippet',
+  },
+  {
+    featureId: 'merchant-listing-offer',
+    featureName: 'Merchant offer details',
+    schemaTypes: ['Offer'],
+    candidateMode: 'nested-enhancement',
+    nestedIn: {
+      hostFeatureId: 'merchant-listing',
+      hostProperty: 'offers',
+      optional: true,
+    },
+    fields: [
+      {
+        properties: ['price', 'priceSpecification.price'],
+        severity: 'required',
+        message: 'Merchant listing Offer needs either price or priceSpecification.price.',
+      },
+      {
+        properties: ['priceCurrency', 'priceSpecification.priceCurrency'],
+        severity: 'required',
+        message: 'Merchant listing Offer needs priceCurrency or priceSpecification.priceCurrency.',
+      },
+      { property: 'availability', severity: 'recommended' },
+      { property: 'itemCondition', severity: 'recommended' },
+      { property: 'priceValidUntil', severity: 'recommended' },
+    ],
+    docsUrl: 'https://developers.google.com/search/docs/appearance/structured-data/merchant-listing',
+  },
+  {
+    featureId: 'aggregate-offer',
+    featureName: 'Aggregate offer details',
+    schemaTypes: ['AggregateOffer'],
+    candidateMode: 'nested-enhancement',
+    nestedIn: {
+      hostFeatureId: ['product-snippet', 'merchant-listing'],
+      hostProperty: 'offers',
+      optional: true,
+    },
+    fields: [
+      { property: 'lowPrice', severity: 'required' },
+      { property: 'priceCurrency', severity: 'required' },
+      { property: 'highPrice', severity: 'recommended' },
+      { property: 'offerCount', severity: 'recommended' },
+    ],
+    docsUrl: 'https://developers.google.com/search/docs/appearance/structured-data/product-snippet',
+  },
+  {
+    featureId: 'aggregate-rating',
+    featureName: 'Review snippet aggregate rating',
+    schemaTypes: ['AggregateRating'],
+    candidateMode: 'nested-enhancement',
+    nestedIn: {
+      hostFeatureId: ['product-snippet', 'recipe', 'local-business', 'software-application'],
+      hostProperty: 'aggregateRating',
+      optional: true,
+    },
+    fields: [
+      { property: 'ratingValue', severity: 'required' },
+      {
+        properties: ['reviewCount', 'ratingCount'],
+        severity: 'required',
+        message: 'AggregateRating needs reviewCount or ratingCount.',
+      },
+      { property: 'bestRating', severity: 'recommended' },
+      { property: 'worstRating', severity: 'recommended' },
+    ],
+    docsUrl: 'https://developers.google.com/search/docs/appearance/structured-data/review-snippet',
+  },
+  {
+    featureId: 'review',
+    featureName: 'Review snippet review',
+    schemaTypes: ['Review'],
+    candidateMode: 'nested-enhancement',
+    nestedIn: {
+      hostFeatureId: ['product-snippet', 'recipe', 'local-business', 'software-application'],
+      hostProperty: 'review',
+      optional: true,
+    },
+    fields: [
+      { property: 'author', severity: 'required' },
+      { property: 'reviewRating', severity: 'required' },
+      { property: 'reviewRating.ratingValue', severity: 'required' },
+      { property: 'datePublished', severity: 'recommended' },
+      { property: 'reviewRating.bestRating', severity: 'recommended' },
+      { property: 'reviewRating.worstRating', severity: 'recommended' },
+    ],
+    docsUrl: 'https://developers.google.com/search/docs/appearance/structured-data/review-snippet',
+  },
+  {
+    featureId: 'video-clip',
+    featureName: 'Clip key moments',
+    schemaTypes: ['Clip'],
+    candidateMode: 'nested-enhancement',
+    nestedIn: {
+      hostFeatureId: 'video-object',
+      hostProperty: 'hasPart',
+      optional: true,
+    },
+    fields: [
+      { property: 'name', severity: 'required' },
+      { property: 'startOffset', severity: 'required' },
+      { property: 'url', severity: 'required' },
+      { property: 'endOffset', severity: 'recommended' },
+    ],
+    docsUrl: 'https://developers.google.com/search/docs/appearance/structured-data/video',
+  },
+  {
+    featureId: 'video-broadcast-event',
+    featureName: 'LIVE badge',
+    schemaTypes: ['BroadcastEvent'],
+    candidateMode: 'nested-enhancement',
+    nestedIn: {
+      hostFeatureId: 'video-object',
+      hostProperty: 'publication',
+      optional: true,
+    },
+    fields: [
+      { property: 'isLiveBroadcast', severity: 'required' },
+      { property: 'startDate', severity: 'required' },
+      { property: 'endDate', severity: 'required' },
+    ],
+    docsUrl: 'https://developers.google.com/search/docs/appearance/structured-data/video',
+  },
 ];
 
 export const GOOGLE_RULES: Record<string, RichResultDefinition> = buildLegacyGoogleRules(
@@ -330,6 +481,7 @@ function auditEntityForFeature(entity: SchemaEntity, feature: GoogleFeatureRule)
   const issues = [
     ...feature.fields.flatMap(rule => evaluateFieldRule(entity, feature, rule)),
     ...(feature.customValidator?.(entity) ?? []),
+    ...evaluateNestedEnhancements(entity, feature),
   ];
   const schemaType = primaryMatchedType(entity, feature);
   const hasRequiredMiss = issues.some(issue => issue.severity === 'error');
@@ -349,7 +501,50 @@ function auditEntityForFeature(entity: SchemaEntity, feature: GoogleFeatureRule)
     featureName: feature.featureName,
     schemaType,
     docsUrl: feature.docsUrl,
+    sourceMode: stringValue(metaValue(entity, 'sourceMode')),
+    extractionChannel: stringValue(metaValue(entity, 'extractionChannel')),
+    jsonLdBlockIndex: numberValue(metaValue(entity, 'jsonLdBlockIndex')),
   };
+}
+
+function evaluateNestedEnhancements(entity: SchemaEntity, hostFeature: GoogleFeatureRule): GoogleRuleIssue[] {
+  const nestedFeatures = SUPPORTED_GOOGLE_FEATURES.filter(feature =>
+    feature.candidateMode === 'nested-enhancement' &&
+    feature.nestedIn &&
+    nestedHostMatches(feature.nestedIn.hostFeatureId, hostFeature.featureId)
+  );
+
+  return nestedFeatures.flatMap(nestedFeature => {
+    const nestedIn = nestedFeature.nestedIn;
+    if (!nestedIn) return [];
+
+    const hostValue = valueAtFieldPath(entity, nestedIn.hostProperty);
+    if (!hasMeaningfulValue(hostValue)) {
+      return nestedIn.optional
+        ? []
+        : [{
+            property: nestedIn.hostProperty,
+            severity: 'warning' as const,
+            message: `${hostFeature.featureName} has no "${nestedIn.hostProperty}" for ${nestedFeature.featureName}.`,
+          }];
+    }
+
+    return valueList(hostValue).flatMap((nestedNode, index) => {
+      if (!nestedNodeMatchesFeature(nestedNode, nestedFeature)) return [];
+
+      const prefix = nestedPropertyPrefix(nestedIn.hostProperty, hostValue, index);
+      const nestedIssues = [
+        ...nestedFeature.fields.flatMap(rule => evaluateFieldRule(nestedNode, nestedFeature, rule)),
+        ...(nestedFeature.customValidator?.(nestedNode) ?? []),
+      ];
+
+      return nestedIssues.map(issue => ({
+        ...issue,
+        property: `${prefix}.${issue.property}`,
+        message: `[${nestedFeature.featureName}] ${issue.message}`,
+      }));
+    });
+  });
 }
 
 function evaluateFieldRule(
@@ -438,6 +633,28 @@ function featureForType(type: string): GoogleFeatureRule | undefined {
   );
 }
 
+function nestedHostMatches(hostFeatureId: string | string[], featureId: string): boolean {
+  return Array.isArray(hostFeatureId)
+    ? hostFeatureId.includes(featureId)
+    : hostFeatureId === featureId;
+}
+
+function valueList(value: unknown): SchemaEntity[] {
+  const values = Array.isArray(value) ? value : [value];
+  return values.filter(isRecord);
+}
+
+function nestedNodeMatchesFeature(node: SchemaEntity, feature: GoogleFeatureRule): boolean {
+  const types = typeValues(node['@type']);
+  return types.some(type => feature.schemaTypes.includes(type));
+}
+
+function nestedPropertyPrefix(hostProperty: string, hostValue: unknown, index: number): string {
+  return Array.isArray(hostValue)
+    ? `${hostProperty}[${index}]`
+    : hostProperty;
+}
+
 function primaryMatchedType(entity: SchemaEntity, feature: GoogleFeatureRule): string | undefined {
   return typeValues(entity['@type']).find(type => feature.schemaTypes.includes(type));
 }
@@ -479,6 +696,10 @@ function entityIdentifier(entity: SchemaEntity): string | null {
     ?? null;
 }
 
+function metaValue(entity: SchemaEntity, key: string): unknown {
+  return isRecord(entity._meta) ? entity._meta[key] : undefined;
+}
+
 function typeValues(value: unknown): string[] {
   if (typeof value === 'string') return [value];
   if (Array.isArray(value)) {
@@ -490,6 +711,12 @@ function typeValues(value: unknown): string[] {
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim().length > 0
+    ? value
+    : undefined;
+}
+
+function numberValue(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value)
     ? value
     : undefined;
 }
