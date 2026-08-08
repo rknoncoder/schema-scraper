@@ -131,6 +131,9 @@ describe('HTML report helpers', () => {
     expect(html).toContain('Download Detailed PNG');
     expect(html).toContain('Download Details JSON');
     expect(html).toContain('Static vs Rendered Diff');
+    expect(script).toContain('Rich Result Disqualifications');
+    expect(script).toContain('Deprecation Notices');
+    expect(script).toContain('function buildBusinessImpactSummary(report)');
     expect(script).toContain('visual cap');
     expect(script).toContain('--raw-map-max-nodes 1000');
     expect(html).toContain('Google Feature');

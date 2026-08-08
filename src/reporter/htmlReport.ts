@@ -970,6 +970,10 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
       background: #fff5f5;
       border-color: #f87171;
     }
+    .summary-card.info {
+      background: #eff6ff;
+      border-color: #93c5fd;
+    }
     .summary-label {
       color: var(--muted);
       display: block;
@@ -2435,6 +2439,30 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
       grid.className = 'summary-grid';
       [
         {
+          label: 'Blockers',
+          value: summary.businessImpact.blockers,
+          note: 'JSON syntax errors that can make parsers drop blocks',
+          tone: summary.businessImpact.blockers > 0 ? 'danger' : '',
+        },
+        {
+          label: 'Rich Result Disqualifications',
+          value: summary.businessImpact.richDisqualifications,
+          note: 'Required Google/schema errors affecting eligibility',
+          tone: summary.businessImpact.richDisqualifications > 0 ? 'danger' : '',
+        },
+        {
+          label: 'Deprecation Notices',
+          value: summary.businessImpact.deprecations,
+          note: 'Valid markup Google no longer shows broadly',
+          tone: summary.businessImpact.deprecations > 0 ? 'warn' : '',
+        },
+        {
+          label: 'Optimizations',
+          value: summary.businessImpact.optimizations,
+          note: 'Recommended fields and non-blocking quality warnings',
+          tone: summary.businessImpact.optimizations > 0 ? 'info' : '',
+        },
+        {
           label: 'Schema Roots',
           value: summary.rootCount,
           note: summary.rootTypes.length + ' root type groups',
@@ -3067,6 +3095,7 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
       const identities = collectSchemaIdentities(roots);
       const duplicates = identities.filter(item => item.count > 1);
       const itemListIssues = collectItemListIssues(roots);
+      const businessImpact = buildBusinessImpactSummary(report);
 
       return {
         rootCount: roots.length,
@@ -3085,9 +3114,24 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
         itemListCount: collectItemLists(roots).length,
         itemListIssueCount: itemListIssues.length,
         itemListIssues,
+        businessImpact,
         fullDagNodes: fullDag.nodes.length,
         prunedDagNodes: prunedDag.nodes.length,
         prunedMetadataCount: prunedDag.prunedMetadataCount,
+      };
+    }
+
+    function buildBusinessImpactSummary(report) {
+      const googleResults = report.googleRichResults || [];
+      const googleIssues = googleResults.flatMap(result => result.issues || []);
+      return {
+        blockers: (report.detectedSyntaxErrors || []).length,
+        richDisqualifications: googleIssues.filter(issue => issue.severity === 'error').length,
+        deprecations: googleResults.filter(result => result.status === 'Deprecated').length,
+        optimizations:
+          googleIssues.filter(issue => issue.severity === 'warning').length
+          + (report.qualityWarnings || []).filter(warning => warning.severity !== 'info').length
+          + (report.scrapeWarnings || []).length,
       };
     }
 

@@ -7,6 +7,9 @@ export interface GoogleRuleIssue {
   property: string;
   severity: Severity;
   message: string;
+  foundProperty?: string;
+  expectedProperty?: string;
+  issueType?: 'missing-field' | 'property-case';
 }
 
 export interface FieldRule {
@@ -554,24 +557,39 @@ function evaluateFieldRule(
 ): GoogleRuleIssue[] {
   if (isEitherOrRule(rule)) {
     const satisfied = rule.properties.some(property => hasFieldPath(entity, property));
+    const caseMatches = rule.properties
+      .map(property => ({ property, found: findCaseVariantFieldPath(entity, property) }))
+      .filter((match): match is { property: string; found: string } => Boolean(match.found));
+
     return satisfied
       ? []
-      : [{
+      : [cleanIssue({
           property: rule.properties.join('|'),
           severity: severityFor(rule.severity),
-          message: rule.message,
-        }];
+          message: caseMatches.length > 0
+            ? propertyCaseMessage(caseMatches[0].found, caseMatches[0].property)
+            : rule.message,
+          foundProperty: caseMatches[0]?.found,
+          expectedProperty: caseMatches[0]?.property,
+          issueType: caseMatches.length > 0 ? 'property-case' : undefined,
+        })];
   }
 
   const value = valueAtFieldPath(entity, rule.property);
   const valid = rule.isValid ? rule.isValid(value, entity) : hasMeaningfulValue(value);
+  const caseVariant = valid ? undefined : findCaseVariantFieldPath(entity, rule.property);
   return valid
     ? []
-    : [{
+    : [cleanIssue({
         property: rule.property,
         severity: severityFor(rule.severity),
-        message: rule.message ?? defaultMissingFieldMessage(feature, rule),
-      }];
+        message: caseVariant
+          ? propertyCaseMessage(caseVariant, rule.property)
+          : rule.message ?? defaultMissingFieldMessage(feature, rule),
+        foundProperty: caseVariant,
+        expectedProperty: caseVariant ? rule.property : undefined,
+        issueType: caseVariant ? 'property-case' : undefined,
+      })];
 }
 
 function collectGoogleRichResultCandidates(value: unknown): SchemaEntity[] {
@@ -679,6 +697,38 @@ function valueAtFieldPath(entity: SchemaEntity, path: string): unknown {
   return path.split('.').reduce<unknown>((current, part) => (
     isRecord(current) ? current[part] : undefined
   ), entity);
+}
+
+function findCaseVariantFieldPath(entity: SchemaEntity, path: string): string | undefined {
+  const parts = path.split('.');
+  let current: unknown = entity;
+  const foundParts: string[] = [];
+
+  for (const part of parts) {
+    if (!isRecord(current)) return undefined;
+    if (Object.prototype.hasOwnProperty.call(current, part)) {
+      current = current[part];
+      foundParts.push(part);
+      continue;
+    }
+
+    const matchingKey = Object.keys(current).find(key => key.toLowerCase() === part.toLowerCase());
+    if (!matchingKey) return undefined;
+    current = current[matchingKey];
+    foundParts.push(matchingKey);
+  }
+
+  return foundParts.join('.');
+}
+
+function propertyCaseMessage(foundProperty: string, expectedProperty: string): string {
+  return `Found property "${foundProperty}" but expected "${expectedProperty}". Schema.org property names are case-sensitive, so Google may treat this as missing.`;
+}
+
+function cleanIssue(issue: GoogleRuleIssue): GoogleRuleIssue {
+  return Object.fromEntries(
+    Object.entries(issue).filter(([, value]) => value !== undefined)
+  ) as GoogleRuleIssue;
 }
 
 function hasMeaningfulValue(value: unknown): boolean {

@@ -10,6 +10,50 @@ export interface QualityWarning {
   jsonLdBlockIndex?: number;
 }
 
+const CANONICAL_PROPERTY_NAMES = [
+  '@context',
+  '@id',
+  '@type',
+  'acceptedAnswer',
+  'aggregateRating',
+  'author',
+  'availability',
+  'brand',
+  'contactPoint',
+  'contentUrl',
+  'dateModified',
+  'datePublished',
+  'description',
+  'duration',
+  'embedUrl',
+  'gtin',
+  'hasPart',
+  'hasVariant',
+  'headline',
+  'image',
+  'interactionStatistic',
+  'item',
+  'itemListElement',
+  'logo',
+  'mainEntity',
+  'name',
+  'offers',
+  'price',
+  'priceCurrency',
+  'ratingCount',
+  'ratingValue',
+  'review',
+  'reviewCount',
+  'sameAs',
+  'sku',
+  'thumbnailUrl',
+  'uploadDate',
+  'url',
+].reduce((map, property) => {
+  map.set(property.toLowerCase(), property);
+  return map;
+}, new Map<string, string>());
+
 const URL_LIKE_KEYS = new Set([
   '@id',
   'url',
@@ -42,9 +86,15 @@ export function auditSchemaQuality(entities: any[]): QualityWarning[] {
       sourceMode: stringValue(meta.sourceMode),
       jsonLdBlockIndex: numberValue(meta.jsonLdBlockIndex),
     }));
+    warnings.push(...auditPropertyCasing(entity, {
+      entityType: type,
+      entityName,
+      sourceMode: stringValue(meta.sourceMode),
+      jsonLdBlockIndex: numberValue(meta.jsonLdBlockIndex),
+    }));
 
     if (type === 'Organization') {
-      if (!hasText(entity.name)) {
+      if (!hasText(entity.name) && !hasCaseVariant(entity, 'name')) {
         warnings.push(cleanWarning({
           entityType: type,
           property: 'name',
@@ -82,6 +132,54 @@ function primaryType(value: unknown): string {
 
 function hasText(value: unknown): boolean {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+function auditPropertyCasing(entity: Record<string, unknown>, context: UrlAuditContext): QualityWarning[] {
+  const warnings: QualityWarning[] = [];
+  visitPropertyCasing(entity, '$', context, warnings);
+  return warnings;
+}
+
+function visitPropertyCasing(
+  value: unknown,
+  path: string,
+  context: UrlAuditContext,
+  warnings: QualityWarning[]
+): void {
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => visitPropertyCasing(item, `${path}[${index}]`, context, warnings));
+    return;
+  }
+
+  if (!isRecord(value)) return;
+
+  Object.entries(value).forEach(([key, child]) => {
+    const canonical = canonicalPropertyFor(key);
+    if (canonical && canonical !== key) {
+      warnings.push(cleanWarning({
+        entityType: context.entityType,
+        property: canonical,
+        severity: 'warning',
+        message: `Found property "${key}" but expected "${canonical}". Schema.org property names are case-sensitive.`,
+        path: `${path}.${key}`,
+        value: primitivePreview(child),
+        entityName: context.entityName,
+        sourceMode: context.sourceMode,
+        jsonLdBlockIndex: context.jsonLdBlockIndex,
+      }));
+    }
+
+    visitPropertyCasing(child, `${path}.${key}`, context, warnings);
+  });
+}
+
+function canonicalPropertyFor(key: string): string | undefined {
+  const canonical = CANONICAL_PROPERTY_NAMES.get(key.toLowerCase());
+  return canonical && canonical !== key ? canonical : undefined;
+}
+
+function hasCaseVariant(entity: Record<string, unknown>, canonicalProperty: string): boolean {
+  return Object.keys(entity).some(key => key !== canonicalProperty && key.toLowerCase() === canonicalProperty.toLowerCase());
 }
 
 function hasOfferData(entity: Record<string, unknown>): boolean {
@@ -252,6 +350,14 @@ function stringValue(value: unknown): string | undefined {
 
 function numberValue(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function primitivePreview(value: unknown): string | undefined {
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+
+  return undefined;
 }
 
 function cleanWarning(warning: QualityWarning): QualityWarning {

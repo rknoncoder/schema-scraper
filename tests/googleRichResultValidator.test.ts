@@ -261,6 +261,55 @@ describe('google rich result validator', () => {
     });
   });
 
+  it('explains case-sensitive Google field typos instead of only reporting missing fields', () => {
+    const results = auditGoogleEligibility([
+      {
+        '@type': 'Organization',
+        Name: 'Myntra',
+        URL: 'https://www.myntra.com',
+      },
+      {
+        '@type': 'VideoObject',
+        name: 'Video with uppercase URL fields',
+        description: 'A video that uses legacy uppercase URL field names.',
+        thumbnailUrl: 'https://example.com/thumb.jpg',
+        uploadDate: '2026-07-01T10:00:00+05:30',
+        contentURL: 'https://example.com/video.mp4',
+        embedURL: 'https://example.com/embed/video',
+      },
+    ]);
+
+    const organization = results.find(result => result.type === 'Organization');
+    const video = results.find(result => result.type === 'VideoObject');
+
+    expect(organization?.status).toBe('Ineligible');
+    expect(organization?.issues).toContainEqual({
+      property: 'name',
+      severity: 'error',
+      message: 'Found property "Name" but expected "name". Schema.org property names are case-sensitive, so Google may treat this as missing.',
+      foundProperty: 'Name',
+      expectedProperty: 'name',
+      issueType: 'property-case',
+    });
+    expect(organization?.issues).toContainEqual({
+      property: 'url',
+      severity: 'warning',
+      message: 'Found property "URL" but expected "url". Schema.org property names are case-sensitive, so Google may treat this as missing.',
+      foundProperty: 'URL',
+      expectedProperty: 'url',
+      issueType: 'property-case',
+    });
+    expect(video?.status).toBe('Eligible');
+    expect(video?.issues).toContainEqual({
+      property: 'contentUrl|embedUrl',
+      severity: 'warning',
+      message: 'Found property "contentURL" but expected "contentUrl". Schema.org property names are case-sensitive, so Google may treat this as missing.',
+      foundProperty: 'contentURL',
+      expectedProperty: 'contentUrl',
+      issueType: 'property-case',
+    });
+  });
+
   it('does not audit nested supported entities as standalone rich result candidates', () => {
     const results = auditGoogleEligibility([
       {

@@ -60,6 +60,33 @@ describe('schema quality auditor', () => {
     ]);
   });
 
+  it('flags schema property casing typos with canonical property guidance', () => {
+    expect(auditSchemaQuality([
+      {
+        '@type': 'Organization',
+        Name: 'Myntra',
+        URL: 'https://www.myntra.com',
+      },
+    ])).toEqual([
+      {
+        entityType: 'Organization',
+        property: 'name',
+        severity: 'warning',
+        message: 'Found property "Name" but expected "name". Schema.org property names are case-sensitive.',
+        path: '$.Name',
+        value: 'Myntra',
+      },
+      {
+        entityType: 'Organization',
+        property: 'url',
+        severity: 'warning',
+        message: 'Found property "URL" but expected "url". Schema.org property names are case-sensitive.',
+        path: '$.URL',
+        value: 'https://www.myntra.com',
+      },
+    ]);
+  });
+
   it('does not flag product groups when variants carry offers', () => {
     expect(auditSchemaQuality([
       {
