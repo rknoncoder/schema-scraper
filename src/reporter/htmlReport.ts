@@ -1,5 +1,7 @@
 import type { AuditActionResult, GraphResolutionHealthReport } from '../commands/auditAction';
 import type { GoogleAuditResult } from '../analyzer/googleRichResultValidator';
+import type { SchemaArchitectureFinding } from '../analyzer/schemaArchitecture';
+import type { FormatMigrationFinding } from '../analyzer/formatMigration';
 import type { QualityWarning } from '../analyzer/schemaQuality';
 import type { RawJsonLdBlockMap } from './rawJsonLdBlockMap';
 import type { JsonLdDiagnostics, StaticRenderedSchemaDiff } from '../scraper';
@@ -17,6 +19,8 @@ export interface ResolvedAuditReport {
   scrapeWarnings: string[];
   detectedSyntaxErrors: AuditActionResult['detectedSyntaxErrors'];
   qualityWarnings: QualityWarning[];
+  architectureFindings?: SchemaArchitectureFinding[];
+  formatMigrationFindings?: FormatMigrationFinding[];
   primaryRoot: GraphEntity | null;
   orphanRoots: GraphEntity[];
   health: GraphResolutionHealthReport | null;
@@ -1044,6 +1048,113 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
       overflow-wrap: anywhere;
       white-space: normal;
     }
+    .impact-tier-list {
+      display: grid;
+      gap: 10px;
+      margin: 16px 0 0;
+    }
+    .impact-tier-row {
+      align-items: start;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      display: grid;
+      gap: 10px;
+      grid-template-columns: auto 1fr;
+      padding: 12px;
+    }
+    .impact-tier-marker {
+      align-items: center;
+      border-radius: 999px;
+      display: inline-flex;
+      font-size: 0.78rem;
+      font-weight: 900;
+      height: 26px;
+      justify-content: center;
+      min-width: 26px;
+      padding: 0 8px;
+    }
+    .impact-tier-marker.fix-first { background: #fee2e2; color: #991b1b; }
+    .impact-tier-marker.graph-clarity { background: #fef3c7; color: #92400e; }
+    .impact-tier-marker.warning { background: #dbeafe; color: #1d4ed8; }
+    .impact-tier-title {
+      color: var(--text);
+      font-weight: 850;
+      margin: 0 0 3px;
+    }
+    .impact-tier-note {
+      color: var(--muted);
+      font-size: 0.84rem;
+      margin: 0;
+    }
+    .quick-fix-grid {
+      display: grid;
+      gap: 14px;
+    }
+    .quick-fix-card {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 14px;
+    }
+    .quick-fix-head {
+      align-items: start;
+      display: flex;
+      gap: 12px;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .quick-fix-title {
+      color: var(--text);
+      font-weight: 900;
+      margin: 0 0 4px;
+    }
+    .quick-fix-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+    .quick-fix-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin: 8px 0 0;
+    }
+    .quick-fix-badge {
+      border-radius: 999px;
+      font-size: 0.72rem;
+      font-weight: 850;
+      padding: 3px 8px;
+    }
+    .quick-fix-badge.fix-first { background: #fee2e2; color: #991b1b; }
+    .quick-fix-badge.graph-clarity { background: #fef3c7; color: #92400e; }
+    .quick-fix-badge.warning { background: #dbeafe; color: #1d4ed8; }
+    .quick-fix-columns {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    }
+    .quick-fix-code h3 {
+      color: var(--accent);
+      font-size: 0.86rem;
+      margin: 0 0 6px;
+      text-transform: uppercase;
+    }
+    .quick-fix-code pre {
+      max-height: 440px;
+      white-space: pre-wrap;
+    }
+    .quick-fix-change-list {
+      margin: 8px 0 0;
+      padding-left: 18px;
+    }
+    .quick-fix-status {
+      color: var(--muted);
+      display: inline-block;
+      font-size: 0.82rem;
+      margin-left: 8px;
+    }
     @keyframes draw-map-edge {
       to { stroke-dashoffset: 0; }
     }
@@ -1335,6 +1446,9 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
 
   <div id="tab-panel-health" class="tab-panel active" role="tabpanel">
     <div id="summary-panel"></div>
+    <div id="quick-fix-panel"></div>
+    <div id="architecture-panel"></div>
+    <div id="format-migration-panel"></div>
     <div id="duplicate-detail-panel"></div>
     <div id="diagnostic-panel"></div>
     <div id="scrape-warning-panel"></div>
@@ -2439,28 +2553,28 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
       grid.className = 'summary-grid';
       [
         {
-          label: 'Blockers',
-          value: summary.businessImpact.blockers,
-          note: 'JSON syntax errors that can make parsers drop blocks',
-          tone: summary.businessImpact.blockers > 0 ? 'danger' : '',
+          label: 'Fix First',
+          value: summary.businessImpact.fixFirst,
+          note: 'Syntax, required-field, and broken @type issues',
+          tone: summary.businessImpact.fixFirst > 0 ? 'danger' : '',
         },
         {
-          label: 'Rich Result Disqualifications',
-          value: summary.businessImpact.richDisqualifications,
-          note: 'Required Google/schema errors affecting eligibility',
-          tone: summary.businessImpact.richDisqualifications > 0 ? 'danger' : '',
+          label: 'Graph Clarity Issues',
+          value: summary.businessImpact.graphClarity,
+          note: 'Unlinked nodes, missing @id, and duplicate global entities',
+          tone: summary.businessImpact.graphClarity > 0 ? 'warn' : '',
         },
         {
-          label: 'Deprecation Notices',
-          value: summary.businessImpact.deprecations,
-          note: 'Valid markup Google no longer shows broadly',
-          tone: summary.businessImpact.deprecations > 0 ? 'warn' : '',
+          label: 'Deprecations & Warnings',
+          value: summary.businessImpact.deprecationsAndWarnings,
+          note: 'Deprecated features and optional-field improvements',
+          tone: summary.businessImpact.deprecationsAndWarnings > 0 ? 'info' : '',
         },
         {
-          label: 'Optimizations',
-          value: summary.businessImpact.optimizations,
-          note: 'Recommended fields and non-blocking quality warnings',
-          tone: summary.businessImpact.optimizations > 0 ? 'info' : '',
+          label: 'Quick Fix Snippets',
+          value: summary.businessImpact.quickFixCount,
+          note: 'Copyable before/after JSON-LD suggestions',
+          tone: summary.businessImpact.quickFixCount > 0 ? 'warn' : '',
         },
         {
           label: 'Schema Roots',
@@ -2525,7 +2639,418 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
         panel.appendChild(pills);
       }
 
+      panel.appendChild(renderBusinessImpactTiers(summary.businessImpact));
       container.appendChild(panel);
+    }
+
+    function renderBusinessImpactTiers(impact) {
+      const list = document.createElement('div');
+      list.className = 'impact-tier-list';
+      [
+        {
+          marker: '1',
+          markerClass: 'fix-first',
+          title: 'Fix First',
+          note: impact.fixFirst + ' issue(s): JSON syntax errors, required Google field failures, and broken @type values.',
+        },
+        {
+          marker: '2',
+          markerClass: 'graph-clarity',
+          title: 'Graph Clarity Issues',
+          note: impact.graphClarity + ' issue(s): missing @id anchors, unlinked schema blocks, or duplicate global identities.',
+        },
+        {
+          marker: '3',
+          markerClass: 'warning',
+          title: 'Deprecations & Warnings',
+          note: impact.deprecationsAndWarnings + ' issue(s): deprecated rich result types, recommended fields, and non-blocking quality warnings.',
+        },
+      ].forEach(tier => {
+        const row = document.createElement('div');
+        row.className = 'impact-tier-row';
+        const marker = document.createElement('span');
+        marker.className = 'impact-tier-marker ' + tier.markerClass;
+        marker.textContent = tier.marker;
+        row.appendChild(marker);
+        const body = document.createElement('div');
+        const title = document.createElement('p');
+        title.className = 'impact-tier-title';
+        title.textContent = tier.title;
+        const note = document.createElement('p');
+        note.className = 'impact-tier-note';
+        note.textContent = tier.note;
+        body.appendChild(title);
+        body.appendChild(note);
+        row.appendChild(body);
+        list.appendChild(row);
+      });
+      return list;
+    }
+
+    function renderQuickFixSnippets(report, container) {
+      if (!container) return;
+      container.textContent = '';
+      const snippets = buildQuickFixSnippets(report);
+
+      const section = document.createElement('section');
+      section.className = 'dedupe-detail-panel';
+      const title = document.createElement('h2');
+      title.textContent = 'Quick Fix Snippets';
+      section.appendChild(title);
+
+      const description = document.createElement('p');
+      description.className = 'meta';
+      description.textContent = 'Copyable before/after JSON-LD suggestions for conservative fixes. Placeholder values must be replaced with real site data before publishing.';
+      section.appendChild(description);
+
+      if (snippets.length === 0) {
+        const empty = document.createElement('p');
+        empty.className = 'meta';
+        empty.textContent = 'No automatic quick fixes were found for this report.';
+        section.appendChild(empty);
+        container.appendChild(section);
+        return;
+      }
+
+      const status = document.createElement('span');
+      status.id = 'quick-fix-status';
+      status.className = 'quick-fix-status';
+      status.setAttribute('role', 'status');
+      status.setAttribute('aria-live', 'polite');
+      section.appendChild(status);
+
+      const grid = document.createElement('div');
+      grid.className = 'quick-fix-grid';
+      snippets.forEach((snippet, index) => {
+        const card = document.createElement('article');
+        card.className = 'quick-fix-card';
+        card.appendChild(renderQuickFixHeader(snippet, index));
+        card.appendChild(renderQuickFixBadges(snippet.badges));
+        card.appendChild(renderQuickFixChanges(snippet.changes));
+        card.appendChild(renderQuickFixColumns(snippet));
+        grid.appendChild(card);
+      });
+      section.appendChild(grid);
+      container.appendChild(section);
+
+      container.querySelectorAll('.quick-fix-copy').forEach(button => {
+        button.addEventListener('click', () => copyQuickFixSnippet(Number(button.dataset.quickFixIndex)));
+      });
+      container.querySelectorAll('.quick-fix-download').forEach(button => {
+        button.addEventListener('click', () => downloadQuickFixSnippet(Number(button.dataset.quickFixIndex)));
+      });
+    }
+
+    function renderQuickFixHeader(snippet, index) {
+      const head = document.createElement('div');
+      head.className = 'quick-fix-head';
+      const headText = document.createElement('div');
+      const heading = document.createElement('p');
+      heading.className = 'quick-fix-title';
+      heading.textContent = snippet.title;
+      headText.appendChild(heading);
+      const source = document.createElement('p');
+      source.className = 'meta';
+      source.textContent = snippet.source;
+      headText.appendChild(source);
+      head.appendChild(headText);
+
+      const actions = document.createElement('div');
+      actions.className = 'quick-fix-actions';
+      [
+        { className: 'quick-fix-copy', label: 'Copy fixed JSON-LD' },
+        { className: 'quick-fix-download', label: 'Download fixed JSON-LD' },
+      ].forEach(action => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = action.className;
+        button.dataset.quickFixIndex = String(index);
+        button.textContent = action.label;
+        actions.appendChild(button);
+      });
+      head.appendChild(actions);
+      return head;
+    }
+
+    function renderQuickFixBadges(badges) {
+      const wrap = document.createElement('div');
+      wrap.className = 'quick-fix-badges';
+      badges.forEach(badge => {
+        const span = document.createElement('span');
+        span.className = 'quick-fix-badge ' + badge.className;
+        span.textContent = badge.label;
+        wrap.appendChild(span);
+      });
+      return wrap;
+    }
+
+    function renderQuickFixChanges(changes) {
+      const list = document.createElement('ul');
+      list.className = 'quick-fix-change-list';
+      changes.forEach(change => {
+        const item = document.createElement('li');
+        item.textContent = change;
+        list.appendChild(item);
+      });
+      return list;
+    }
+
+    function renderQuickFixColumns(snippet) {
+      const columns = document.createElement('div');
+      columns.className = 'quick-fix-columns';
+      [
+        { label: 'Before', value: snippet.beforeText },
+        { label: 'Fixed After', value: snippet.afterText },
+      ].forEach(column => {
+        const wrap = document.createElement('div');
+        wrap.className = 'quick-fix-code';
+        const title = document.createElement('h3');
+        title.textContent = column.label;
+        const pre = document.createElement('pre');
+        pre.textContent = column.value;
+        wrap.appendChild(title);
+        wrap.appendChild(pre);
+        columns.appendChild(wrap);
+      });
+      return columns;
+    }
+
+    function buildQuickFixSnippets(report) {
+      const roots = report.rawEntitiesForGraphResolver || report.entitiesForGraphResolver || [];
+      const snippets = [];
+      roots.forEach((entity, index) => {
+        if (!entity || typeof entity !== 'object' || Array.isArray(entity)) return;
+        const cleanBefore = cleanSchemaForExport(entity);
+        const fixed = deepClone(cleanBefore);
+        const changes = [];
+        const badges = [];
+        const meta = entity._meta || {};
+        const blockIndex = typeof meta.jsonLdBlockIndex === 'number' ? meta.jsonLdBlockIndex : 0;
+        const type = schemaMapType(entity);
+        const relatedResults = relatedGoogleRows(report.googleRichResults || [], entity, blockIndex, type);
+
+        applySchemaPropertyCasingFixes(fixed, '$', changes);
+        applyMissingIdFix(fixed, report, changes, badges);
+        relatedResults.forEach(result => {
+          (result.issues || []).forEach(issue => {
+            applyMissingRequiredFieldFix(fixed, result, issue, changes, badges);
+          });
+        });
+
+        if (changes.length === 0) return;
+        addImpactBadges(badges, relatedResults, changes);
+        snippets.push({
+          title: schemaMapNodeLabel(entity),
+          source: quickFixSourceLabel(entity, index),
+          badges: dedupeQuickFixBadges(badges),
+          changes: uniqueValues(changes),
+          beforeText: JSON.stringify(cleanBefore, null, 2),
+          afterText: JSON.stringify(fixed, null, 2),
+        });
+      });
+      window.__schemaQuickFixSnippets = snippets;
+      return snippets;
+    }
+
+    function relatedGoogleRows(results, entity, blockIndex, type) {
+      const identity = quickFixIdentity(entity);
+      return results.filter(result => {
+        if (blockIndex && result.jsonLdBlockIndex === blockIndex) return true;
+        if (result.type !== type && result.schemaType !== type) return false;
+        if (!identity) return true;
+        return !result.entityId || result.entityId === identity;
+      });
+    }
+
+    function quickFixIdentity(entity) {
+      return stringIdentity(entity && entity['@id'])
+        || stringIdentity(entity && entity.url)
+        || stringIdentity(entity && entity.name)
+        || '';
+    }
+
+    function quickFixSourceLabel(entity, index) {
+      const meta = entity._meta || {};
+      return [
+        'Entity #' + (index + 1),
+        schemaMapType(entity),
+        meta.sourceMode,
+        meta.extractionChannel,
+        meta.jsonLdBlockIndex ? 'Block #' + meta.jsonLdBlockIndex : '',
+      ].filter(Boolean).join(' / ');
+    }
+
+    function applySchemaPropertyCasingFixes(value, path, changes) {
+      if (Array.isArray(value)) {
+        value.forEach((item, index) => applySchemaPropertyCasingFixes(item, path + '[' + index + ']', changes));
+        return;
+      }
+      if (!value || typeof value !== 'object') return;
+
+      Object.keys(value).forEach(key => {
+        const canonical = quickFixCanonicalProperty(key);
+        if (canonical && canonical !== key && !Object.prototype.hasOwnProperty.call(value, canonical)) {
+          value[canonical] = value[key];
+          delete value[key];
+          changes.push('Renamed ' + path + '.' + key + ' to ' + path + '.' + canonical + '.');
+          applySchemaPropertyCasingFixes(value[canonical], path + '.' + canonical, changes);
+          return;
+        }
+        applySchemaPropertyCasingFixes(value[key], path + '.' + key, changes);
+      });
+    }
+
+    function quickFixCanonicalProperty(key) {
+      const canonical = quickFixCanonicalPropertyMap()[key.toLowerCase()];
+      return canonical && canonical !== key ? canonical : undefined;
+    }
+
+    function quickFixCanonicalPropertyMap() {
+      return {
+        '@context': '@context',
+        '@id': '@id',
+        '@type': '@type',
+        acceptedanswer: 'acceptedAnswer',
+        aggregaterating: 'aggregateRating',
+        author: 'author',
+        availability: 'availability',
+        brand: 'brand',
+        contactpoint: 'contactPoint',
+        contenturl: 'contentUrl',
+        datemodified: 'dateModified',
+        datepublished: 'datePublished',
+        description: 'description',
+        duration: 'duration',
+        embedurl: 'embedUrl',
+        gtin: 'gtin',
+        haspart: 'hasPart',
+        hasvariant: 'hasVariant',
+        headline: 'headline',
+        image: 'image',
+        interactionstatistic: 'interactionStatistic',
+        item: 'item',
+        itemlistelement: 'itemListElement',
+        logo: 'logo',
+        mainentity: 'mainEntity',
+        name: 'name',
+        offers: 'offers',
+        price: 'price',
+        pricecurrency: 'priceCurrency',
+        ratingcount: 'ratingCount',
+        ratingvalue: 'ratingValue',
+        review: 'review',
+        reviewcount: 'reviewCount',
+        sameas: 'sameAs',
+        sku: 'sku',
+        thumbnailurl: 'thumbnailUrl',
+        uploaddate: 'uploadDate',
+        url: 'url',
+      };
+    }
+
+    function applyMissingIdFix(entity, report, changes, badges) {
+      if (!entity || typeof entity !== 'object' || entity['@id']) return;
+      const type = schemaMapType(entity);
+      if (!['Organization', 'LocalBusiness', 'WebSite', 'WebPage', 'Product', 'ProductGroup', 'BreadcrumbList', 'VideoObject'].includes(type)) return;
+      entity['@id'] = defaultIdForType(report, type);
+      changes.push('Added a stable @id anchor for ' + type + '.');
+      badges.push({ label: 'Graph Clarity', className: 'graph-clarity' });
+    }
+
+    function defaultIdForType(report, type) {
+      let origin = 'https://example.com';
+      try {
+        origin = new URL(report.finalUrl || report.url).origin;
+      } catch {
+        origin = String(report.finalUrl || report.url || 'https://example.com').replace(/\\/+$/, '');
+      }
+      const fragments = {
+        Organization: '#organization',
+        LocalBusiness: '#local-business',
+        WebSite: '#website',
+        WebPage: '#webpage',
+        Product: '#product',
+        ProductGroup: '#product-group',
+        BreadcrumbList: '#breadcrumb',
+        VideoObject: '#video',
+      };
+      return origin.replace(/\\/+$/, '') + (fragments[type] || '#' + type.toLowerCase());
+    }
+
+    function applyMissingRequiredFieldFix(entity, result, issue, changes, badges) {
+      if (!issue || issue.severity !== 'error' || issue.issueType === 'property-case') return;
+      if (!issue.property || issue.property.includes('|') || issue.property.includes('.') || issue.property.includes('[')) return;
+      if (hasMeaningfulQuickFixValue(entity[issue.property])) return;
+      entity[issue.property] = placeholderForProperty(issue.property, result.type || result.schemaType || schemaMapType(entity));
+      changes.push('Inserted placeholder for missing required field "' + issue.property + '". Replace it with real site data.');
+      badges.push({ label: 'Fix First', className: 'fix-first' });
+    }
+
+    function placeholderForProperty(property, type) {
+      if (property === 'name') return '[' + type + ' name]';
+      if (property === 'description') return '[' + type + ' description]';
+      if (property === 'image' || property === 'thumbnailUrl') return 'https://example.com/path/to/image.jpg';
+      if (property === 'uploadDate' || property === 'datePublished' || property === 'dateModified') return '2026-01-01T00:00:00+00:00';
+      if (property === 'url') return 'https://example.com/canonical-url';
+      if (property === 'address') return { '@type': 'PostalAddress', streetAddress: '[street address]', addressLocality: '[city]' };
+      if (property === 'telephone') return '[phone number]';
+      if (property === 'startDate' || property === 'endDate') return '2026-01-01T00:00:00+00:00';
+      if (property === 'location') return { '@type': 'Place', name: '[place name]' };
+      if (property === 'offers') return { '@type': 'Offer', price: '[price]', priceCurrency: '[currency]' };
+      return '[' + property + ']';
+    }
+
+    function addImpactBadges(badges, googleResults, changes) {
+      if (googleResults.some(result => (result.issues || []).some(issue => issue.severity === 'error'))) {
+        badges.push({ label: 'Fix First', className: 'fix-first' });
+      }
+      if (changes.some(change => change.includes('@id'))) {
+        badges.push({ label: 'Graph Clarity', className: 'graph-clarity' });
+      }
+      if (badges.length === 0) {
+        badges.push({ label: 'Warning', className: 'warning' });
+      }
+    }
+
+    function dedupeQuickFixBadges(badges) {
+      const seen = new Set();
+      return badges.filter(badge => {
+        const key = badge.label + badge.className;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    }
+
+    function hasMeaningfulQuickFixValue(value) {
+      if (value === null || value === undefined) return false;
+      if (typeof value === 'string') return value.trim().length > 0;
+      if (Array.isArray(value)) return value.length > 0;
+      if (typeof value === 'object') return Object.keys(value).length > 0;
+      return true;
+    }
+
+    function deepClone(value) {
+      return JSON.parse(JSON.stringify(value));
+    }
+
+    function copyQuickFixSnippet(index) {
+      const snippet = (window.__schemaQuickFixSnippets || [])[index];
+      if (!snippet) return;
+      const copied = fallbackCopyText(snippet.afterText);
+      setQuickFixStatus(copied ? 'Copied fixed JSON-LD.' : 'Copy failed.');
+    }
+
+    function downloadQuickFixSnippet(index) {
+      const snippet = (window.__schemaQuickFixSnippets || [])[index];
+      if (!snippet) return;
+      downloadTextFile(snippet.afterText, 'schema-quick-fix-' + (index + 1) + '.jsonld', 'application/ld+json;charset=utf-8');
+      setQuickFixStatus('Downloaded quick fix snippet.');
+    }
+
+    function setQuickFixStatus(message) {
+      const status = document.getElementById('quick-fix-status');
+      if (status) status.textContent = message;
     }
 
     function renderDuplicateDetails(report, container) {
@@ -3124,14 +3649,30 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
     function buildBusinessImpactSummary(report) {
       const googleResults = report.googleRichResults || [];
       const googleIssues = googleResults.flatMap(result => result.issues || []);
+      const quickFixes = buildQuickFixSnippets(report);
+      const rawSummary = report.rawJsonLdBlockMap?.summary || {};
+      const duplicateGlobalCount = collectSchemaIdentities(report.resolvedEntities || [])
+        .filter(item => ['Organization', 'LocalBusiness', 'WebSite'].includes(item.type) && item.count > 1)
+        .length;
+      const architectureFindings = report.architectureFindings || [];
+      const formatMigrationFindings = report.formatMigrationFindings || [];
+      const graphClarity = (rawSummary.noCrossBlockIdLinkBlockCount || 0)
+        + duplicateGlobalCount
+        + architectureFindings.filter(finding => finding.severity === 'warning').length
+        + quickFixes.filter(snippet => snippet.badges.some(badge => badge.className === 'graph-clarity')).length;
+      const fixFirst = (report.detectedSyntaxErrors || []).length
+        + googleIssues.filter(issue => issue.severity === 'error').length
+        + formatMigrationFindings.filter(finding => finding.category === 'data-mismatch').length;
+      const deprecationsAndWarnings = googleResults.filter(result => result.status === 'Deprecated').length
+        + googleIssues.filter(issue => issue.severity === 'warning').length
+        + (report.qualityWarnings || []).filter(warning => warning.severity !== 'info').length
+        + (report.scrapeWarnings || []).length
+        + formatMigrationFindings.filter(finding => finding.category !== 'data-mismatch').length;
       return {
-        blockers: (report.detectedSyntaxErrors || []).length,
-        richDisqualifications: googleIssues.filter(issue => issue.severity === 'error').length,
-        deprecations: googleResults.filter(result => result.status === 'Deprecated').length,
-        optimizations:
-          googleIssues.filter(issue => issue.severity === 'warning').length
-          + (report.qualityWarnings || []).filter(warning => warning.severity !== 'info').length
-          + (report.scrapeWarnings || []).length,
+        fixFirst,
+        graphClarity,
+        deprecationsAndWarnings,
+        quickFixCount: quickFixes.length,
       };
     }
 
@@ -3213,6 +3754,244 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
           label: item.label,
           detail: item.warning.detail,
         }));
+    }
+
+    function renderArchitectureFindings(findings, container) {
+      if (!container) return;
+      container.textContent = '';
+
+      const values = findings || [];
+      if (values.length === 0) {
+        const successBox = document.createElement('section');
+        successBox.style.borderColor = '#bfdbfe';
+        successBox.style.background = '#eff6ff';
+        const title = document.createElement('h2');
+        title.style.color = '#1d4ed8';
+        title.style.margin = '0';
+        title.textContent = 'Entity Architecture Checks: No Issues Found';
+        successBox.appendChild(title);
+        container.appendChild(successBox);
+        return;
+      }
+
+      const card = document.createElement('div');
+      card.className = 'alert-card';
+      card.style.background = '#fffbeb';
+      card.style.borderColor = '#fde68a';
+
+      const warningCount = values.filter(finding => finding.severity === 'warning').length;
+      const infoCount = values.filter(finding => finding.severity === 'info').length;
+      const title = document.createElement('h2');
+      title.className = 'alert-title';
+      title.style.color = '#92400e';
+      title.textContent = 'Entity Architecture Checks (' + warningCount + ' warning, ' + infoCount + ' info)';
+      card.appendChild(title);
+
+      const description = document.createElement('p');
+      description.className = 'meta';
+      description.style.color = '#92400e';
+      description.textContent = 'Checks whether top-level schema nodes use stable @id anchors, expected cross-entity references, and lean reusable site profiles.';
+      card.appendChild(description);
+
+      values.forEach(finding => {
+        const item = document.createElement('div');
+        item.style.marginTop = '12px';
+        item.style.borderTop = '1px solid #fde68a';
+        item.style.paddingTop = '10px';
+
+        const summary = document.createElement('p');
+        summary.style.margin = '0 0 4px';
+        appendText(summary, 'node-key', finding.entityType + (finding.property ? '.' + finding.property : '') + ': ');
+        const message = document.createElement('span');
+        message.textContent = finding.message;
+        summary.appendChild(message);
+        item.appendChild(summary);
+
+        const recommendation = document.createElement('div');
+        recommendation.className = 'fix-suggestion';
+        recommendation.textContent = 'Recommendation: ' + finding.recommendation;
+        item.appendChild(recommendation);
+
+        const evidence = [
+          finding.category ? 'category: ' + finding.category : '',
+          finding.entityName ? 'entity: ' + finding.entityName : '',
+          finding.targetType ? 'target: ' + finding.targetType : '',
+          finding.expectedReference ? 'expected @id: ' + finding.expectedReference : '',
+          finding.path ? 'path: ' + finding.path : '',
+          finding.jsonLdBlockIndex ? 'JSON-LD block #' + finding.jsonLdBlockIndex : '',
+          finding.sourceMode ? 'source: ' + finding.sourceMode : '',
+        ].filter(Boolean);
+
+        if (evidence.length > 0) {
+          const detail = document.createElement('p');
+          detail.className = 'meta';
+          detail.style.margin = '6px 0 0';
+          detail.textContent = evidence.join(' / ');
+          item.appendChild(detail);
+        }
+
+        card.appendChild(item);
+      });
+
+      container.appendChild(card);
+    }
+
+    function renderFormatMigrationFindings(report, container) {
+      if (!container) return;
+      container.textContent = '';
+
+      const findings = report.formatMigrationFindings || [];
+      const convertibleCount = legacyFormatEntities(report).length;
+      const card = document.createElement('div');
+      card.className = 'alert-card';
+      card.style.background = findings.length > 0 ? '#f8fafc' : '#eff6ff';
+      card.style.borderColor = findings.length > 0 ? '#cbd5e1' : '#bfdbfe';
+
+      const title = document.createElement('h2');
+      title.className = 'alert-title';
+      title.style.color = findings.some(finding => finding.category === 'data-mismatch') ? '#991b1b' : '#1d4ed8';
+      title.textContent = findings.length > 0
+        ? 'Multi-Format Migration & Conflict Audit (' + findings.length + ')'
+        : 'Multi-Format Migration & Conflict Audit: No Issues Found';
+      card.appendChild(title);
+
+      const description = document.createElement('p');
+      description.className = 'meta';
+      description.textContent = 'Checks for legacy Microdata/RDFa core entities, duplicate schema types across formats, and conflicting values between JSON-LD and legacy markup.';
+      card.appendChild(description);
+
+      if (convertibleCount > 0) {
+        const actions = document.createElement('div');
+        actions.className = 'quick-fix-actions';
+        actions.style.justifyContent = 'flex-start';
+
+        const copy = document.createElement('button');
+        copy.type = 'button';
+        copy.textContent = 'Copy Converted JSON-LD';
+        copy.addEventListener('click', () => copyConvertedLegacyJsonLd(report));
+        actions.appendChild(copy);
+
+        const download = document.createElement('button');
+        download.type = 'button';
+        download.textContent = 'Download Converted JSON-LD';
+        download.addEventListener('click', () => downloadConvertedLegacyJsonLd(report));
+        actions.appendChild(download);
+
+        const status = document.createElement('span');
+        status.id = 'format-migration-status';
+        status.className = 'quick-fix-status';
+        status.setAttribute('role', 'status');
+        status.setAttribute('aria-live', 'polite');
+        status.textContent = convertibleCount + ' legacy-format entity object(s) available for JSON-LD export.';
+        actions.appendChild(status);
+        card.appendChild(actions);
+      }
+
+      findings.forEach(finding => {
+        const item = document.createElement('div');
+        item.style.marginTop = '12px';
+        item.style.borderTop = '1px solid #cbd5e1';
+        item.style.paddingTop = '10px';
+
+        const summary = document.createElement('p');
+        summary.style.margin = '0 0 4px';
+        appendText(summary, 'node-key', finding.entityType + (finding.property ? '.' + finding.property : '') + ': ');
+        const message = document.createElement('span');
+        message.textContent = finding.message;
+        summary.appendChild(message);
+        item.appendChild(summary);
+
+        const recommendation = document.createElement('div');
+        recommendation.className = 'fix-suggestion';
+        recommendation.textContent = 'Recommendation: ' + finding.recommendation;
+        item.appendChild(recommendation);
+
+        if (finding.values && finding.values.length > 0) {
+          const values = document.createElement('ul');
+          values.className = 'quick-fix-change-list';
+          finding.values.forEach(entry => {
+            const li = document.createElement('li');
+            li.textContent = formatLabel(entry.format) + ': ' + entry.value;
+            values.appendChild(li);
+          });
+          item.appendChild(values);
+        }
+
+        const evidence = [
+          finding.category ? 'category: ' + finding.category : '',
+          finding.formats && finding.formats.length > 0 ? 'formats: ' + finding.formats.map(formatLabel).join(', ') : '',
+          finding.entityName ? 'entity: ' + finding.entityName : '',
+          finding.jsonLdBlockIndex ? 'JSON-LD block #' + finding.jsonLdBlockIndex : '',
+          finding.sourceMode ? 'source: ' + finding.sourceMode : '',
+        ].filter(Boolean);
+
+        if (evidence.length > 0) {
+          const detail = document.createElement('p');
+          detail.className = 'meta';
+          detail.style.margin = '6px 0 0';
+          detail.textContent = evidence.join(' / ');
+          item.appendChild(detail);
+        }
+
+        card.appendChild(item);
+      });
+
+      container.appendChild(card);
+    }
+
+    function legacyFormatEntities(report) {
+      return (report.rawEntitiesForGraphResolver || []).filter(entity => {
+        const channel = entity && entity._meta && entity._meta.extractionChannel;
+        return channel === 'microdata' || channel === 'rdfa';
+      });
+    }
+
+    function convertedLegacyJsonLdPayload(report) {
+      return legacyFormatEntities(report).map(entity => {
+        const cleaned = cleanSchemaForExport(entity);
+        if (cleaned && typeof cleaned === 'object' && !Array.isArray(cleaned) && !cleaned['@context']) {
+          cleaned['@context'] = 'https://schema.org';
+        }
+        return cleaned;
+      });
+    }
+
+    function convertedLegacyJsonLdText(report) {
+      const payload = convertedLegacyJsonLdPayload(report);
+      return JSON.stringify(payload.length === 1 ? payload[0] : payload, null, 2);
+    }
+
+    function copyConvertedLegacyJsonLd(report) {
+      const text = convertedLegacyJsonLdText(report);
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text)
+          .then(() => setFormatMigrationStatus('Copied converted JSON-LD.'))
+          .catch(() => {
+            const copied = fallbackCopyText(text);
+            setFormatMigrationStatus(copied ? 'Copied converted JSON-LD.' : 'Copy failed.');
+          });
+        return;
+      }
+
+      const copied = fallbackCopyText(text);
+      setFormatMigrationStatus(copied ? 'Copied converted JSON-LD.' : 'Copy failed.');
+    }
+
+    function downloadConvertedLegacyJsonLd(report) {
+      downloadTextFile(convertedLegacyJsonLdText(report), 'converted-legacy-schema.jsonld', 'application/ld+json;charset=utf-8');
+      setFormatMigrationStatus('Downloaded converted legacy schema JSON-LD.');
+    }
+
+    function setFormatMigrationStatus(message) {
+      const status = document.getElementById('format-migration-status');
+      if (status) status.textContent = message;
+    }
+
+    function formatLabel(format) {
+      if (format === 'json-ld') return 'JSON-LD';
+      if (format === 'microdata') return 'Microdata';
+      if (format === 'rdfa') return 'RDFa';
+      return String(format || 'unknown');
     }
 
     function renderDiagnostics(errors, container) {
@@ -4511,6 +5290,8 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
     }
 
     renderAuditSummary(reportData, document.getElementById('summary-panel'));
+    renderArchitectureFindings(reportData.architectureFindings, document.getElementById('architecture-panel'));
+    renderFormatMigrationFindings(reportData, document.getElementById('format-migration-panel'));
     renderDuplicateDetails(reportData, document.getElementById('duplicate-detail-panel'));
     renderDiagnostics(reportData.detectedSyntaxErrors, document.getElementById('diagnostic-panel'));
     renderScrapeWarnings(reportData.scrapeWarnings, document.getElementById('scrape-warning-panel'));
@@ -4519,6 +5300,7 @@ export function renderHtmlReport(report: ResolvedAuditReport): string {
     initializeGoogleRichResultFilters();
     renderSemanticTreeViews();
     renderDeferredReportTab('health');
+    renderQuickFixSnippets(reportData, document.getElementById('quick-fix-panel'));
     document.querySelectorAll('.report-tab').forEach(tab => {
       tab.addEventListener('click', () => setActiveReportTab(tab.dataset.tab));
     });

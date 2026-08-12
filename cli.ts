@@ -3,6 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {
   auditSchemaQuality,
+  auditSchemaArchitecture,
+  auditFormatMigration,
   processRawPayload,
   scrapeJsonLdInput,
   scrapeSchema,
@@ -671,6 +673,8 @@ function buildResolvedAuditReport(
     ? verifyGraphResolutionHealth(entities, primaryRoot, { log: false, color: false })
     : null;
   const qualityWarnings = auditSchemaQuality(entities);
+  const architectureFindings = auditSchemaArchitecture(rawEntities, resolvedTreeArray);
+  const formatMigrationFindings = auditFormatMigration(rawEntities);
 
   const report: ResolvedAuditReport = {
     url: extractedData.url,
@@ -684,6 +688,8 @@ function buildResolvedAuditReport(
     scrapeWarnings: extractedData.warnings ?? [],
     detectedSyntaxErrors: graphOutput.detectedSyntaxErrors,
     qualityWarnings,
+    architectureFindings,
+    formatMigrationFindings,
     primaryRoot,
     orphanRoots,
     health,

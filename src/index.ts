@@ -70,6 +70,8 @@ export {
   homogenizeSchemaFormat,
 } from './analyzer/formatHomogenizer';
 export { auditSchemaQuality } from './analyzer/schemaQuality';
+export { auditSchemaArchitecture } from './analyzer/schemaArchitecture';
+export { auditFormatMigration } from './analyzer/formatMigration';
 export {
   auditGoogleEligibility,
   GOOGLE_RULES,
@@ -89,6 +91,14 @@ export type {
   ValidationReport,
 } from './analyzer/syntaxValidator';
 export type { QualityWarning } from './analyzer/schemaQuality';
+export type {
+  ArchitectureFindingCategory,
+  SchemaArchitectureFinding,
+} from './analyzer/schemaArchitecture';
+export type {
+  FormatMigrationFinding,
+  FormatMigrationFindingCategory,
+} from './analyzer/formatMigration';
 export type {
   CandidateMode,
   EitherOrFieldRule,

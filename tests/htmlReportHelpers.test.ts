@@ -9,6 +9,12 @@ function sampleReport(): ResolvedAuditReport {
     generatedAt: '2026-01-01T00:00:00.000Z',
     rawEntitiesForGraphResolver: [
       { '@context': 'https://schema.org', '@type': 'Product', name: 'Demo' },
+      {
+        '@type': 'Product',
+        name: 'Demo',
+        offers: { '@type': 'Offer', price: '100' },
+        _meta: { extractionChannel: 'microdata', sourceMode: 'static' },
+      },
     ],
     strictGoogleEntities: [
       { '@context': 'https://schema.org', '@type': 'Product', name: 'Demo' },
@@ -23,6 +29,26 @@ function sampleReport(): ResolvedAuditReport {
     scrapeWarnings: [],
     detectedSyntaxErrors: [],
     qualityWarnings: [],
+    architectureFindings: [
+      {
+        category: 'entity-linkage',
+        severity: 'warning',
+        entityType: 'Product',
+        property: '@id',
+        message: 'Top-level Product entity has no stable @id anchor.',
+        recommendation: 'Add a canonical @id and reference it from related schema nodes.',
+      },
+    ],
+    formatMigrationFindings: [
+      {
+        category: 'legacy-format',
+        severity: 'info',
+        entityType: 'Product',
+        formats: ['microdata'],
+        message: 'Product is defined in Microdata.',
+        recommendation: 'Migrate this Product markup into JSON-LD.',
+      },
+    ],
     primaryRoot: { '@context': 'https://schema.org', '@type': 'Product', name: 'Demo' },
     orphanRoots: [],
     health: {
@@ -131,9 +157,22 @@ describe('HTML report helpers', () => {
     expect(html).toContain('Download Detailed PNG');
     expect(html).toContain('Download Details JSON');
     expect(html).toContain('Static vs Rendered Diff');
-    expect(script).toContain('Rich Result Disqualifications');
-    expect(script).toContain('Deprecation Notices');
+    expect(script).toContain('Fix First');
+    expect(script).toContain('Graph Clarity Issues');
+    expect(script).toContain('Deprecations & Warnings');
     expect(script).toContain('function buildBusinessImpactSummary(report)');
+    expect(html).toContain('id="architecture-panel"');
+    expect(script).toContain('function renderArchitectureFindings(findings, container)');
+    expect(script).toContain('Entity Architecture Checks');
+    expect(html).toContain('id="format-migration-panel"');
+    expect(script).toContain('function renderFormatMigrationFindings(report, container)');
+    expect(script).toContain('Multi-Format Migration & Conflict Audit');
+    expect(script).toContain('Download Converted JSON-LD');
+    expect(script).toContain('function convertedLegacyJsonLdText(report)');
+    expect(html).toContain('id="quick-fix-panel"');
+    expect(script).toContain('function renderQuickFixSnippets(report, container)');
+    expect(script).toContain('function buildQuickFixSnippets(report)');
+    expect(script).toContain('Copy fixed JSON-LD');
     expect(script).toContain('visual cap');
     expect(script).toContain('--raw-map-max-nodes 1000');
     expect(html).toContain('Google Feature');
